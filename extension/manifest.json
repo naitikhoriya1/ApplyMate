@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "ApplyMate",
+  "version": "1.0.0",
+  "description": "Personal job application autofill assistant",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "action": {
+    "default_title": "ApplyMate"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
