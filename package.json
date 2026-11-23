@@ -5,12 +5,14 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:extension": "tsc -p extension/tsconfig.json",
+    "build:extension": "npm run build:ext:check && npm run build:ext:bundle",
     "build:all": "npm run build && npm run build:extension",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "build:ext:check": "tsc -p extension/tsconfig.json",
+    "build:ext:bundle": "node scripts/build-extension.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.78.0",
@@ -24,6 +26,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "tailwindcss": "4.3.3",

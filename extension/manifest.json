@@ -2,24 +2,30 @@
   "manifest_version": 3,
   "name": "ApplyMate",
   "version": "1.0.0",
-  "description": "Personal job application autofill assistant",
+  "description": "Personal job application autofill assistant for Safari",
+
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "tabs"
   ],
+
   "action": {
-    "default_title": "ApplyMate"
+    "default_title": "ApplyMate",
+    "default_popup": "dist/popup.html"
   },
+
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "dist/background.js"
   },
+
   "content_scripts": [
     {
-      "matches": [
-        "https://*/*"
-      ],
-      "js": ["content.js"],
+      "matches": ["https://*/*"],
+      "js": ["dist/content.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+
+  "icons": {}
 }
