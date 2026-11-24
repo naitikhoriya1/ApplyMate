@@ -3,19 +3,14 @@
  *
  * Bundles each extension entry point (content, background, popup) into
  * a self-contained IIFE JavaScript file inside extension/dist/.
- *
- * Why IIFE format?
- *   Browser extension content scripts and background service workers are
- *   loaded as plain scripts — not as ES modules.  IIFE format wraps all
- *   code in a closure, so there are no top-level `import`/`export`
- *   statements that the browser would reject.
+ * Copies popup.html and icons into dist for clean distribution.
  *
  * Usage:
  *   node scripts/build-extension.mjs
  */
 
 import * as esbuild from "esbuild";
-import { cpSync, mkdirSync } from "fs";
+import { cpSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -23,6 +18,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const extSrc = join(root, "extension", "src");
 const extDist = join(root, "extension", "dist");
+const extIcons = join(root, "extension", "icons");
 
 // Ensure dist directory exists
 mkdirSync(extDist, { recursive: true });
@@ -34,7 +30,6 @@ const sharedOpts = {
   target: "safari16",
   platform: "browser",
   logLevel: "info",
-  // Treat browser/chrome as globals — don't bundle them
   external: [],
 };
 
@@ -64,6 +59,10 @@ cpSync(
   join(extDist, "popup.html")
 );
 
-console.log("\n✅  Extension built → extension/dist/");
-console.log("   background.js  content.js  popup.js  popup.html");
+// Copy icons into dist as well
+if (existsSync(extIcons)) {
+  cpSync(extIcons, join(extDist, "icons"), { recursive: true });
+}
 
+console.log("\n✅  Extension built → extension/dist/");
+console.log("   background.js  content.js  popup.js  popup.html  icons/");

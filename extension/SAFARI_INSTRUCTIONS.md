@@ -1,119 +1,121 @@
-# ApplyMate Safari Extension — Loading Instructions
+# ApplyMate Safari Extension — Developer & Loading Guide
 
-> These steps let you load the ApplyMate extension in Safari **without Xcode**.  
-> Safari 17+ supports loading unsigned extensions directly from your project folder.
-
----
-
-## Prerequisites
-
-- macOS Ventura or later  
-- Safari 17 or later  
-- Run `npm run build:extension` from the project root **before** loading  
+> Load the ApplyMate extension directly in Safari on macOS **without full Xcode**.  
+> Safari 17+ supports loading unsigned extensions directly from the project directory.
 
 ---
 
-## Step 1 — Enable the Safari Develop Menu
+## 📋 Prerequisites
 
-1. Open **Safari → Settings** (⌘,)  
-2. Click the **Advanced** tab  
-3. Check **"Show features for web developers"**  
-
-A new **Develop** menu will appear in the menu bar.
+- **macOS Sonoma / Ventura** (macOS 14+ or 13+)
+- **Safari 17+**
+- Node.js & npm (installed)
 
 ---
 
-## Step 2 — Allow Unsigned Extensions
+## 🚀 Step-by-Step Setup
 
-> ⚠️ This setting resets every time Safari quits. Repeat it after each restart.
+### Step 1 — Enable Safari Developer Features
 
-1. Open the **Develop** menu in the menu bar  
-2. Click **"Allow Unsigned Extensions"**  
-3. Enter your macOS password if prompted  
+1. Open **Safari**.
+2. In the menu bar, open **Safari → Settings…** (or press `⌘,`).
+3. Click the **Advanced** tab.
+4. At the bottom, check:
+   - ✅ **"Show features for web developers"** (in Safari 17+)
+   *(or "Show Develop menu in menu bar" in earlier versions).*
+5. You will now see a **Develop** menu in your top menu bar.
 
 ---
 
-## Step 3 — Build the Extension
+### Step 2 — Allow Unsigned Extensions
 
-Run this in the project root:
+> ℹ️ *Note: Apple security policies reset this setting whenever Safari is completely quit. If you restart Safari, re-check this option.*
+
+1. In the menu bar, click **Develop**.
+2. Click **"Allow Unsigned Extensions"**.
+3. Enter your macOS account password / Touch ID when prompted.
+
+---
+
+### Step 3 — Build the Extension
+
+From the root of your project:
 
 ```bash
 cd /Users/naitik/Project/extension/applymate
 npm run build:extension
 ```
 
-This compiles all TypeScript and writes four files to `extension/dist/`:
-- `background.js` — service worker
-- `content.js` — page detection script  
-- `popup.js` — toolbar popup logic  
-- `popup.html` — popup UI  
+This compiles TypeScript using `esbuild` and bundles:
+- `extension/dist/background.js` (MV3 Service Worker)
+- `extension/dist/content.js` (Page Detector & Floating Button)
+- `extension/dist/popup.js` (Toolbar Action Script)
+- `extension/dist/popup.html` (Popup User Interface)
+- `extension/dist/icons/` (16px, 32px, 48px, 128px PNG Icons)
 
 ---
 
-## Step 4 — Load the Extension in Safari
+### Step 4 — Load Extension in Safari
 
-1. Open the **Develop** menu  
-2. Click **"Load Unpacked Extension…"**  
-3. In the file picker, navigate to and select the **`extension/`** folder  
-   (the folder that contains `manifest.json`, not the `dist/` subfolder)  
-4. Click **Open**  
-
-The ApplyMate icon (or a default icon) will appear in the Safari toolbar.
-
----
-
-## Step 5 — Run the First Test
-
-1. Click **Enable** in the extension row if prompted  
-2. Navigate to any `https://` page (e.g. `https://github.com`)  
-3. Open **Develop → Web Inspector** (⌥⌘I), go to the **Console** tab  
-4. Look for a log line like:  
+1. In Safari, click **Develop → Load Unpacked Extension…**
+2. In the file picker, select the **`extension`** folder:
    ```
-   [ApplyMate] Page detected: "GitHub · Build and ship software on a single, collaborative platform" (github.com)
+   /Users/naitik/Project/extension/applymate/extension
    ```
-5. Click the **ApplyMate button** in the toolbar  
-6. The popup should display:
-   - Page Title ✅
-   - Domain ✅
-   - Full URL ✅
+   *(Select the folder containing `manifest.json`, NOT `dist`)*
+3. Click **Open**.
+4. If prompted with *"Turn On Extension?"*, click **Turn On**.
+
+The **ApplyMate** icon (blue square with white briefcase) will appear in your Safari toolbar.
 
 ---
 
-## Rebuilding After Code Changes
+## 🧪 Testing the First Requirement
+
+### Test Goal
+> When you open any webpage, the extension should be able to identify its URL and page title.
+
+### Verification Steps:
+
+1. **Open any webpage in Safari**:
+   - You can visit any public site (e.g. `https://github.com`, `https://news.ycombinator.com`, `https://apple.com`) or your local dashboard at `http://localhost:3000`.
+2. **Observe the Content Script**:
+   - Open **Develop → Web Inspector** (`⌥⌘I`), switch to the **Console** tab.
+   - Look for the console message:
+     ```
+     [ApplyMate] Page detected: "<Page Title>" (<hostname>)
+     ```
+   - Notice the floating blue **ApplyMate** button injected at the bottom-right corner of the page. Clicking it pulses and confirms active status.
+3. **Open the Toolbar Popup Action**:
+   - Click the **ApplyMate icon** in the Safari toolbar.
+   - The popup opens immediately showing:
+     - **Status Indicator**: 🟢 *Extension active*
+     - **Page Title**: Detected active page title
+     - **Domain**: Hostname (e.g., `github.com` or `localhost`)
+     - **Full URL**: Complete page URL
+   - Click the **Refresh** button in the popup to re-verify live communication between the popup, background service worker, and active tab.
+
+---
+
+## 🔄 Rebuilding During Development
+
+Whenever you edit files inside `extension/src/`:
 
 ```bash
-npm run build:extension   # recompile TypeScript → extension/dist/
+npm run build:extension
 ```
 
-Then reload the extension in Safari:
-- **Develop → Reload Extension** (if available), or  
-- Remove and re-add via **Develop → Load Unpacked Extension…**
+Then in Safari:
+- Click **Develop → Reload Extension** (or toggle it in Safari Settings → Extensions).
 
 ---
 
-## Troubleshooting
+## 🛠️ Architecture Notes (Safari MV3)
 
-| Symptom | Fix |
-|---|---|
-| "Allow Unsigned Extensions" is greyed out | Re-enable it — it resets on Safari restart |
-| Popup is blank | Make sure `dist/popup.html` exists (`npm run build:extension`) |
-| Console shows no `[ApplyMate]` log | Check the page URL starts with `https://` (the manifest only matches HTTPS) |
-| `browser is not defined` error | The shim in `content.ts` handles this; make sure you rebuilt after edits |
-| Extension not loading | Confirm you selected the `extension/` folder (not `extension/dist/`) |
-
----
-
-## Project Scripts Reference
-
-```bash
-npm run build:extension   # Type-check + bundle extension → extension/dist/
-npm run build:ext:check   # TypeScript type-check only (no emit)
-npm run build:ext:bundle  # esbuild bundle only
-npm run build             # Next.js dashboard build
-npm run build:all         # Next.js + extension builds together
-npm run dev               # Start Next.js dev server (dashboard only)
-npm run typecheck         # Type-check the Next.js app
-npm run lint              # ESLint the entire project
-npm run test              # Run unit tests
-```
-
+- **Manifest V3**: Uses `"manifest_version": 3`.
+- **Background Service Worker**: Configured as `"background": { "service_worker": "dist/background.js" }`.
+- **Cross-Namespace Compatibility**: Implements an automatic `browser` / `chrome` namespace shim to guarantee compatibility across Safari, Firefox, and Chromium engines.
+- **Permissions (Minimum Principle)**:
+  - `"activeTab"`: Access metadata on the currently focused tab when the user clicks the action.
+  - `"tabs"`: Allows background query of tab title/URL as a fallback when content scripts haven't finished injecting.
+  - `"storage"`: Authoritative `browser.storage.local` store for candidate profile persistence.

@@ -1,51 +1,48 @@
 /**
  * ApplyMate — Background Service Worker
  *
- * Runs as a Manifest V3 Service Worker — there is no persistent DOM
- * or long-lived window. The worker may be suspended by the browser
- * at any time and restarted on the next event.
+ * Runs as a Manifest V3 Service Worker.
  *
  * Responsibilities:
  *  1. Listen for install / activate lifecycle events.
- *  2. Receive PAGE_INFO messages from content scripts and cache them
- *     per tab so the popup can query them quickly.
- *  3. Respond to popup PAGE_INFO_REQ messages.
- *  4. Answer PING health-check messages.
- *
- * Safari Note:
- *   Safari 15.4+ supports background service workers in Manifest V3.
- *   The `browser` namespace is available; we use it with a chrome shim.
- *   Avoid any APIs that require a persistent event page (they won't
- *   work in a service worker context).
+ *  2. Receive PAGE_INFO messages from content scripts and cache them per tab.
+ *  3. Fallback to tab querying if content script hasn't reported yet.
+ *  4. Respond to popup PAGE_INFO_REQ messages with active tab URL and title.
+ *  5. Answer PING health-check messages from the popup.
  */
 
 import type {
   AnyMessage,
   PageInfoPayload,
-  PageInfoResMessage,
   PongMessage,
 } from "./types";
 
 const ext = (typeof browser !== "undefined" ? browser : chrome) as typeof chrome;
 const EXTENSION_VERSION = "1.0.0";
 
-// In-memory tab cache. Keyed by tab ID.
-// Because service workers can be suspended, this is intentionally
-// kept lean — a full persistence layer will come in Phase 2 via
-// ext.storage.local.
+// In-memory tab cache: tabId -> PageInfoPayload
 const tabPageInfo = new Map<number, PageInfoPayload>();
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 ext.runtime.onInstalled.addListener(({ reason }) => {
-  console.log(`[ApplyMate SW] Installed — reason: ${reason}`);
+  console.log(`[ApplyMate SW] Installed/Updated — reason: ${reason}`);
 });
 
-// ─── Tab cleanup ─────────────────────────────────────────────────────────────
+// ─── Tab cleanup on close ─────────────────────────────────────────────────────
 ext.tabs.onRemoved.addListener((tabId) => {
   tabPageInfo.delete(tabId);
 });
 
-// ─── Message handler ─────────────────────────────────────────────────────────
+// ─── Helper to parse host safely ──────────────────────────────────────────────
+function getHost(urlStr: string): string {
+  try {
+    return new URL(urlStr).hostname;
+  } catch {
+    return "—";
+  }
+}
+
+// ─── Message router ───────────────────────────────────────────────────────────
 ext.runtime.onMessage.addListener(
   (
     message: AnyMessage,
@@ -53,42 +50,61 @@ ext.runtime.onMessage.addListener(
     sendResponse: (response: AnyMessage) => void
   ) => {
     switch (message.type) {
-      // Content script → background: store page metadata.
+      // Content script -> background: store detected page metadata
       case "PAGE_INFO": {
         const tabId = sender.tab?.id;
         if (tabId !== undefined && message.payload) {
           tabPageInfo.set(tabId, message.payload);
           console.log(
-            `[ApplyMate SW] Tab ${tabId} page info cached — "${message.payload.title}" (${message.payload.host})`
+            `[ApplyMate SW] Tab ${tabId} cached — "${message.payload.title}" (${message.payload.host})`
           );
         }
         sendResponse({ type: "PAGE_INFO_RES", payload: null });
         return false;
       }
 
-      // Popup → background: return cached page info for the active tab.
+      // Popup -> background: return current active tab page info
       case "PAGE_INFO_REQ": {
-        // Retrieve the currently focused tab.
         ext.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          const tab = tabs[0];
-          const info = tab?.id !== undefined ? tabPageInfo.get(tab.id) : undefined;
-          const response: PageInfoResMessage = {
-            type: "PAGE_INFO_RES",
-            payload: info ?? null,
-          };
-          sendResponse(response);
+          const activeTab = tabs[0];
+          if (!activeTab || activeTab.id === undefined) {
+            sendResponse({ type: "PAGE_INFO_RES", payload: null });
+            return;
+          }
+
+          // 1. Check in-memory cache from content script
+          const cached = tabPageInfo.get(activeTab.id);
+          if (cached) {
+            sendResponse({ type: "PAGE_INFO_RES", payload: cached });
+            return;
+          }
+
+          // 2. Fallback: extract directly from tab object if content script hasn't reported
+          if (activeTab.url) {
+            const fallback: PageInfoPayload = {
+              title: activeTab.title || "(Untitled Page)",
+              url: activeTab.url,
+              host: getHost(activeTab.url),
+              timestamp: Date.now(),
+            };
+            tabPageInfo.set(activeTab.id, fallback);
+            sendResponse({ type: "PAGE_INFO_RES", payload: fallback });
+            return;
+          }
+
+          sendResponse({ type: "PAGE_INFO_RES", payload: null });
         });
-        // Returning true keeps the message channel open for the async response.
+        // Returning true keeps channel open for async tabs.query callback
         return true;
       }
 
-      // Popup → background: health check.
+      // Popup -> background: health check
       case "PING": {
-        const response: PongMessage = {
+        const pong: PongMessage = {
           type: "PONG",
           payload: { version: EXTENSION_VERSION },
         };
-        sendResponse(response);
+        sendResponse(pong);
         return false;
       }
 
@@ -97,4 +113,3 @@ ext.runtime.onMessage.addListener(
     }
   }
 );
-
