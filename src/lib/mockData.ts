@@ -53,20 +53,20 @@ export interface ResumeItem {
 
 export const initialProfile: UserProfileData = {
   firstName: "Naitik",
-  lastName: "K.",
-  headline: "Senior Full Stack & Frontend Engineer",
-  email: "naitik@example.com",
-  phone: "+1 (555) 349-2910",
-  location: "San Francisco, CA (Open to Remote)",
+  lastName: "Khoriya",
+  headline: "QA Automation Engineer | SDET (Frontend & API)",
+  email: "ethicalkhoriya@gmail.com",
+  phone: "+91 7877816484",
+  location: "Delhi, India",
   portfolio: "https://naitik.dev",
   linkedin: "https://linkedin.com/in/naitik",
   github: "https://github.com/naitik",
   summary:
-    "Product-focused software engineer with 6+ years of experience crafting high-performance web applications, developer tooling, and modern distributed user interfaces.",
-  workAuthorization: "Authorized to work in US (Citizen / Permanent Resident)",
+    "QA Automation Engineer and SDET specialising in frontend and API testing. Experienced with Jest, Playwright, Selenium, and TypeScript. Passionate about building reliable test automation frameworks and improving software quality.",
+  workAuthorization: "Authorized to work in India",
   noticePeriod: "Available immediately / 2 weeks",
-  desiredSalary: "$160,000 - $190,000 USD",
-  completionRate: 88,
+  desiredSalary: "Competitive / Negotiable",
+  completionRate: 92,
 };
 
 export const initialExperiences = [
