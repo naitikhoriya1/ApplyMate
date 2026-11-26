@@ -845,14 +845,18 @@ const SENSITIVE_DEMOGRAPHIC_PATTERN =
 const NON_CANDIDATE_PERSON_PATTERN =
   /\b(reference|emergency\s*contact|referee|guardian|nominee|manager\s*name|supervisor)\b/i;
 
+const CAPTCHA_OR_BOT_PATTERN =
+  /\b(captcha|recaptcha|hcaptcha|turnstile|bot\s*check|verification\s*code)\b/i;
+
 /**
  * Returns true if the element is unsupported, a password field, or a sensitive
- * demographic / non-candidate field that must never be autofilled.
+ * demographic / non-candidate / CAPTCHA field that must never be autofilled.
  */
 export function shouldSkipElement(meta: FieldMetadata): boolean {
   if (UNSUPPORTED_INPUT_TYPES.has(meta.inputType)) return true;
   if (SENSITIVE_DEMOGRAPHIC_PATTERN.test(meta.combined)) return true;
   if (NON_CANDIDATE_PERSON_PATTERN.test(meta.combined)) return true;
+  if (CAPTCHA_OR_BOT_PATTERN.test(meta.combined)) return true;
   return false;
 }
 

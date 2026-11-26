@@ -46,11 +46,18 @@ const PLATFORM_PATTERNS: Array<{ platform: JobPlatform; match: (url: string, hos
   },
   {
     platform: "LinkedIn",
-    match: (_url, host) => host.includes("linkedin.com") && typeof window !== "undefined" && window.location.pathname.includes("/jobs/"),
+    match: (url, host) =>
+      host.includes("linkedin.com") &&
+      (url.includes("/jobs/") ||
+        (typeof window !== "undefined" && window.location.pathname.includes("/jobs/"))),
   },
   {
     platform: "Indeed",
     match: (_url, host) => host.includes("indeed.com"),
+  },
+  {
+    platform: "Naukri",
+    match: (_url, host) => host.includes("naukri.com"),
   },
   {
     platform: "SmartRecruiters",
@@ -61,9 +68,8 @@ const PLATFORM_PATTERNS: Array<{ platform: JobPlatform; match: (url: string, hos
   // ── Indian job portals & career sites ───────────────────────────────────
   {
     platform: "Generic Application",
-    match: (url, host) =>
+    match: (_url, host) =>
       host.includes("creditsamadhaan.com") ||
-      host.includes("naukri.com") ||
       host.includes("internshala.com") ||
       host.includes("unstop.com") ||
       host.includes("cutshort.io") ||

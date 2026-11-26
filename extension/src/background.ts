@@ -17,7 +17,6 @@ import type {
   PageInfoResMessage,
   GetProfileResMessage,
   PongMessage,
-  AutofillResMessage,
 } from "./types.ts";
 import type { CandidateProfile } from "../../src/types/profile.ts";
 import { DEFAULT_PROFILE } from "../../src/lib/profile/defaultProfile.ts";
@@ -146,48 +145,55 @@ ext.runtime.onMessage.addListener(
         return true;
       }
 
-      // Popup -> background: route autofill trigger to active tab
-      case "TRIGGER_AUTOFILL": {
+      // Popup -> background: route autofill / undo / manual fill / rerun to active tab
+      case "TRIGGER_AUTOFILL":
+      case "UNDO_AUTOFILL":
+      case "FILL_SINGLE_FIELD":
+      case "RERUN_DETECTION": {
         ext.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           const activeTab = tabs[0];
-          if (!activeTab || activeTab.id === undefined) {
-            const errRes: AutofillResMessage = {
-              type: "AUTOFILL_RES",
-              payload: {
-                success: false,
-                filledCount: 0,
-                totalFieldsFound: 0,
-                filledFields: [],
-                summary: {
-                  detectedFields: 0,
-                  filledFields: 0,
-                  skippedFields: 0,
-                  failedFields: 0,
+          const makeFallback = (reason: string): AnyMessage => {
+            if (message.type === "TRIGGER_AUTOFILL") {
+              return {
+                type: "AUTOFILL_RES",
+                payload: {
+                  success: false,
+                  filledCount: 0,
+                  totalFieldsFound: 0,
+                  filledFields: [],
+                  summary: {
+                    detectedFields: 0,
+                    filledFields: 0,
+                    skippedFields: 0,
+                    failedFields: 0,
+                    manualAttentionFields: 0,
+                  },
+                  message: reason,
                 },
-                message: "No active tab found.",
-              },
+              };
+            }
+            if (message.type === "RERUN_DETECTION") {
+              return { type: "PAGE_INFO_RES", payload: null };
+            }
+            if (message.type === "UNDO_AUTOFILL") {
+              return {
+                type: "UNDO_AUTOFILL_RES",
+                payload: { success: false, restoredCount: 0, message: reason },
+              };
+            }
+            return {
+              type: "FILL_SINGLE_FIELD_RES",
+              payload: { success: false, message: reason },
             };
-            sendResponse(errRes);
+          };
+
+          if (!activeTab || activeTab.id === undefined) {
+            sendResponse(makeFallback("No active tab found."));
             return;
           }
 
-          ext.tabs.sendMessage(activeTab.id, { type: "TRIGGER_AUTOFILL" }, (response) => {
-            sendResponse(response ?? {
-              type: "AUTOFILL_RES",
-              payload: {
-                success: false,
-                filledCount: 0,
-                totalFieldsFound: 0,
-                filledFields: [],
-                summary: {
-                  detectedFields: 0,
-                  filledFields: 0,
-                  skippedFields: 0,
-                  failedFields: 0,
-                },
-                message: "Could not trigger autofill on this page.",
-              },
-            });
+          ext.tabs.sendMessage(activeTab.id, message, (response) => {
+            sendResponse(response ?? makeFallback("Could not reach page content script."));
           });
         });
         return true;

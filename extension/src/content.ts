@@ -22,8 +22,16 @@ import type {
   GetProfileResMessage,
   AutofillResMessage,
   AutofillExecutionResult,
+  UndoAutofillResMessage,
+  FillSingleFieldResMessage,
+  FillSingleFieldPayload,
 } from "./types";
-import { executeAutofill } from "../autofill/autofillEngine";
+import {
+  executeAutofill,
+  undoLastAutofill,
+  fillSingleField,
+  resetAutofillState,
+} from "../autofill/autofillEngine";
 import type { CandidateProfile } from "../../src/types/profile";
 import { DEFAULT_PROFILE } from "../../src/lib/profile/defaultProfile";
 
@@ -832,18 +840,54 @@ if (document.readyState === "loading") {
   initApplyMate();
 }
 
-// Monitor dynamic SPA route changes and DOM mutations (e.g. clicking "Apply Now" reveals form)
+// Monitor dynamic SPA route changes, multi-step wizard transitions, and DOM mutations
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 function handleDomChange(): void {
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
-    const prev = currentFormDetection.detected;
+    const prevDetected = currentFormDetection.detected;
+    const prevFieldsCount = currentFormDetection.fieldsCount;
+    const prevTypesSig = currentFormDetection.classifiedTypes.join(",");
+
     currentFormDetection = detectApplicationForm();
-    if (prev !== currentFormDetection.detected || !document.getElementById(HOST_ID)) {
+    const nextTypesSig = currentFormDetection.classifiedTypes.join(",");
+
+    const stepOrFormChanged =
+      prevDetected !== currentFormDetection.detected ||
+      prevFieldsCount !== currentFormDetection.fieldsCount ||
+      prevTypesSig !== nextTypesSig;
+
+    if (stepOrFormChanged) {
+      resetAutofillState();
+    }
+
+    if (stepOrFormChanged || !document.getElementById(HOST_ID)) {
       initApplyMate();
     }
   }, 350);
 }
+
+// Detect clicks on multi-step "Next" / "Continue" / "Review" buttons and rescan
+document.addEventListener(
+  "click",
+  (e) => {
+    const target = e.target as HTMLElement | null;
+    const btn = target?.closest?.("button, [role='button'], input[type='button']");
+    if (!btn || btn.closest("#applymate-extension-root")) return;
+    const label = (
+      btn.textContent ||
+      btn.getAttribute("aria-label") ||
+      (btn as HTMLInputElement).value ||
+      ""
+    )
+      .toLowerCase()
+      .trim();
+    if (/\b(next|continue|save\s*and\s*continue|proceed|review)\b/.test(label)) {
+      setTimeout(handleDomChange, 450);
+    }
+  },
+  { capture: true }
+);
 
 window.addEventListener("popstate", handleDomChange);
 window.addEventListener("hashchange", handleDomChange);
@@ -860,6 +904,44 @@ ext.runtime.onMessage.addListener(
     if (message.type === "PAGE_INFO_REQ") {
       sendResponse({ type: "PAGE_INFO_RES", payload: getPageSnapshot() });
       return false;
+    }
+
+    if (message.type === "RERUN_DETECTION") {
+      resetAutofillState();
+      const snapshot = getPageSnapshot();
+      reportToBackground();
+      sendResponse({ type: "PAGE_INFO_RES", payload: snapshot });
+      return false;
+    }
+
+    if (message.type === "UNDO_AUTOFILL") {
+      const undoRes = undoLastAutofill();
+      const response: UndoAutofillResMessage = {
+        type: "UNDO_AUTOFILL_RES",
+        payload: undoRes,
+      };
+      sendResponse(response);
+      return false;
+    }
+
+    if (message.type === "FILL_SINGLE_FIELD") {
+      const payload = message.payload as FillSingleFieldPayload | undefined;
+      (async () => {
+        let profile: CandidateProfile | null = null;
+        try {
+          const res = (await ext.runtime.sendMessage({ type: "GET_PROFILE" })) as GetProfileResMessage;
+          if (res?.type === "GET_PROFILE_RES" && res.payload) profile = res.payload;
+        } catch {}
+        const result = payload
+          ? fillSingleField(payload.fieldId, profile ?? DEFAULT_PROFILE, payload.customValue)
+          : { success: false, message: "Missing fieldId." };
+        const response: FillSingleFieldResMessage = {
+          type: "FILL_SINGLE_FIELD_RES",
+          payload: result,
+        };
+        sendResponse(response);
+      })();
+      return true;
     }
 
     if (message.type === "TRIGGER_AUTOFILL") {

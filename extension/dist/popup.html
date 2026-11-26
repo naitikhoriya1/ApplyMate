@@ -464,50 +464,215 @@
       flex-shrink: 0;
     }
 
-    /* ── Autofill result ─────────────────────────────── */
+    /* ── Autofill Review Interface ───────────────────── */
     .autofill-result {
       display: none;
       border-radius: var(--radius);
       padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
     }
 
     .autofill-result.success {
-      background: var(--green-l);
-      border: 1px solid var(--green-m);
+      border-color: var(--green-m);
+      background: #f0fdf4;
     }
 
     .autofill-result.empty {
       background: var(--bg-2);
-      border: 1px solid var(--border);
+      border-color: var(--border);
     }
 
     .autofill-result-header {
       display: flex;
       align-items: center;
-      gap: 5px;
+      justify-content: space-between;
+      gap: 6px;
       font-size: 12px;
       font-weight: 700;
       color: #065f46;
     }
 
+    .autofill-result-title {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
     .autofill-result.empty .autofill-result-header { color: var(--fg-3); }
 
-    .autofill-chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      margin-top: 7px;
+    .review-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 5px;
+      margin-top: 8px;
     }
 
-    .autofill-chip {
+    .stat-box {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 5px 4px;
+      text-align: center;
+    }
+
+    .stat-num {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--fg);
+      line-height: 1.1;
+    }
+
+    .stat-lbl {
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--fg-4);
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    .stat-box.filled .stat-num { color: var(--green-d); }
+    .stat-box.skipped .stat-num { color: var(--fg-3); }
+    .stat-box.failed .stat-num { color: #dc2626; }
+
+    .manual-banner {
+      margin-top: 7px;
+      padding: 6px 8px;
+      border-radius: 7px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
+      font-size: 10.5px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .review-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .review-btn {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 5px 8px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--fg-2);
+      font-family: inherit;
+      font-size: 10.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+    }
+
+    .review-btn:hover:not(:disabled) {
+      background: var(--bg-3);
+      border-color: var(--border-2);
+    }
+
+    .review-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .review-list {
+      margin-top: 8px;
+      max-height: 170px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .review-item {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .review-item-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .review-item-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--fg);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .review-badge {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .review-badge.filled { background: var(--green-l); color: var(--green-d); }
+    .review-badge.skipped { background: var(--bg-3); color: var(--fg-3); }
+    .review-badge.failed { background: #fef2f2; color: #dc2626; }
+    .review-badge.manual_attention { background: #fffbeb; color: #b45309; }
+
+    .review-item-sub {
+      font-size: 10px;
+      color: var(--fg-3);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .review-manual-row {
+      display: flex;
+      gap: 4px;
+      margin-top: 2px;
+    }
+
+    .review-manual-input {
+      flex: 1;
+      min-width: 0;
+      font-family: inherit;
+      font-size: 10px;
+      padding: 3px 6px;
+      border: 1px solid var(--border-2);
+      border-radius: 5px;
+      color: var(--fg);
+      background: var(--bg-2);
+    }
+
+    .review-manual-btn {
+      font-family: inherit;
       font-size: 10px;
       font-weight: 600;
-      background: #fff;
-      border: 1px solid var(--green-m);
-      color: var(--green-d);
-      padding: 2px 6px;
+      padding: 3px 8px;
       border-radius: 5px;
+      border: none;
+      background: var(--blue);
+      color: #fff;
+      cursor: pointer;
+      flex-shrink: 0;
     }
+
+    .review-manual-btn:hover { background: var(--blue-d); }
 
     /* ── Skeleton loaders ────────────────────────────── */
     .skeleton {
@@ -767,17 +932,52 @@
         </div>
       </div>
 
-      <!-- Autofill result -->
+      <!-- Autofill Review Interface -->
       <div class="section">
         <div class="autofill-result" id="autofill-result">
           <div class="autofill-result-header">
-            <svg width="13" height="13" id="autofill-result-icon" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M20 6 9 17l-5-5"/>
-            </svg>
-            <span id="autofill-result-msg"></span>
+            <div class="autofill-result-title">
+              <svg width="13" height="13" id="autofill-result-icon" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 6 9 17l-5-5"/>
+              </svg>
+              <span id="autofill-result-msg"></span>
+            </div>
           </div>
-          <div class="autofill-chips" id="autofill-chips"></div>
+
+          <div class="review-stats" id="review-stats">
+            <div class="stat-box">
+              <div class="stat-num" id="stat-detected">0</div>
+              <div class="stat-lbl">Detected</div>
+            </div>
+            <div class="stat-box filled">
+              <div class="stat-num" id="stat-filled">0</div>
+              <div class="stat-lbl">Filled</div>
+            </div>
+            <div class="stat-box skipped">
+              <div class="stat-num" id="stat-skipped">0</div>
+              <div class="stat-lbl">Skipped</div>
+            </div>
+            <div class="stat-box failed">
+              <div class="stat-num" id="stat-failed">0</div>
+              <div class="stat-lbl">Failed</div>
+            </div>
+          </div>
+
+          <div class="manual-banner hidden" id="manual-banner">
+            <span id="manual-banner-text">0 fields require manual attention</span>
+          </div>
+
+          <div class="review-actions">
+            <button class="review-btn" id="undo-btn" disabled title="Undo most recent autofill">
+              Undo Autofill
+            </button>
+            <button class="review-btn" id="rerun-btn" title="Rerun form field detection">
+              Rerun Detection
+            </button>
+          </div>
+
+          <div class="review-list" id="review-list"></div>
         </div>
       </div>
 

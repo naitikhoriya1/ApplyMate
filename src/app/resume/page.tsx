@@ -1,39 +1,186 @@
 "use client";
 
-import React, { useState } from "react";
-import {
-  FileText,
-  UploadCloud,
-  CheckCircle2,
-  Download,
-} from "lucide-react";
-import { initialResumes } from "@/lib/mockData";
-import { Card, CardContent } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { UploadCloud, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { resumeStorage, validatePdfFile } from "@/lib/storage/resumeStorage";
+import type { StoredResumeMetadata } from "@/types/resume";
+import { ResumeUploadZone } from "@/components/resume/ResumeUploadZone";
+import { ActiveResumeCard } from "@/components/resume/ActiveResumeCard";
+import { ResumeList } from "@/components/resume/ResumeList";
+import {
+  ResumeConfirmationModal,
+  type ConfirmationAction,
+} from "@/components/resume/ResumeConfirmationModal";
 
 export default function ResumePage() {
-  const [resumes, setResumes] = useState(initialResumes);
-  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [resumes, setResumes] = useState<StoredResumeMetadata[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isBusy, setIsBusy] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<ConfirmationAction | null>(null);
 
-  const setDefault = (id: string) => {
-    setResumes(
-      resumes.map((r) => ({
-        ...r,
-        isDefault: r.id === id,
-      }))
-    );
+  const headerFileInputRef = useRef<HTMLInputElement | null>(null);
+  const replaceInputRef = useRef<HTMLInputElement | null>(null);
+  const replaceTargetRef = useRef<StoredResumeMetadata | null>(null);
+
+  const loadResumes = useCallback(async () => {
+    try {
+      const list = await resumeStorage.listResumes();
+      setResumes(list);
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Failed to load resumes from IndexedDB."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    resumeStorage
+      .listResumes()
+      .then((list) => {
+        if (active) setResumes(list);
+      })
+      .catch((err) => {
+        if (active) {
+          setErrorMessage(
+            err instanceof Error ? err.message : "Failed to load resumes from IndexedDB."
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const showToast = (msg: string) => {
+    setStatusMessage(msg);
+    setTimeout(() => setStatusMessage(null), 4000);
   };
 
-  const handleSimulatedUpload = () => {
-    setUploadSuccess(true);
-    setTimeout(() => setUploadSuccess(false), 3000);
+  const handleUploadSelected = (file: File) => {
+    const validation = validatePdfFile(file);
+    if (!validation.valid) {
+      setErrorMessage(validation.error ?? "Invalid PDF file.");
+      return;
+    }
+    setErrorMessage(null);
+    setPendingAction({ kind: "upload", file });
   };
 
-  const activeResume = resumes.find((r) => r.isDefault) || resumes[0];
+  const handleRequestReplace = (resume: StoredResumeMetadata) => {
+    replaceTargetRef.current = resume;
+    replaceInputRef.current?.click();
+  };
+
+  const handleReplaceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    const target = replaceTargetRef.current;
+    replaceTargetRef.current = null;
+    if (!file || !target) return;
+
+    const validation = validatePdfFile(file);
+    if (!validation.valid) {
+      setErrorMessage(validation.error ?? "Invalid PDF file.");
+      return;
+    }
+    setErrorMessage(null);
+    setPendingAction({
+      kind: "replace",
+      targetId: target.id,
+      targetName: target.fileName,
+      file,
+    });
+  };
+
+  const handleDownload = async (id: string) => {
+    try {
+      const record = await resumeStorage.getResume(id);
+      if (!record) {
+        setErrorMessage("Resume file not found in IndexedDB.");
+        return;
+      }
+      const blob = new Blob([record.data], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = record.fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setErrorMessage("Could not download PDF from IndexedDB.");
+    }
+  };
+
+  const handleConfirmAction = async () => {
+    if (!pendingAction) return;
+    setIsBusy(true);
+    setErrorMessage(null);
+
+    try {
+      if (pendingAction.kind === "upload") {
+        const saved = await resumeStorage.saveResume(pendingAction.file);
+        showToast(`Saved "${saved.fileName}" locally in IndexedDB.`);
+      } else if (pendingAction.kind === "replace") {
+        const updated = await resumeStorage.replaceResume(
+          pendingAction.targetId,
+          pendingAction.file
+        );
+        showToast(`Replaced with "${updated.fileName}".`);
+      } else if (pendingAction.kind === "select_active") {
+        await resumeStorage.setActiveResume(pendingAction.resumeId);
+        showToast(`"${pendingAction.fileName}" is now your confirmed active resume.`);
+      } else if (pendingAction.kind === "delete") {
+        await resumeStorage.deleteResume(pendingAction.resumeId);
+        showToast(`Deleted "${pendingAction.fileName}".`);
+      }
+      await loadResumes();
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Failed to complete resume action."
+      );
+    } finally {
+      setIsBusy(false);
+      setPendingAction(null);
+    }
+  };
+
+  const activeResume = resumes.find((r) => r.isDefault) ?? resumes[0] ?? null;
 
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
+      {/* Hidden browser file pickers */}
+      <input
+        ref={headerFileInputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) handleUploadSelected(f);
+        }}
+        aria-label="Upload PDF resume"
+      />
+      <input
+        ref={replaceInputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={handleReplaceFileChange}
+        aria-label="Replace PDF resume"
+      />
+
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-zinc-200/80 dark:border-zinc-800">
         <div>
@@ -41,185 +188,93 @@ export default function ResumePage() {
             Resume Manager
           </h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-            Store and parse target resumes. ApplyMate uses the active resume for Safari autofill and ATS matching.
+            Store and manage your PDF resumes locally in IndexedDB. Files never leave your browser without explicit confirmation.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <Button onClick={handleSimulatedUpload} className="gap-2">
+          <Button
+            onClick={() => headerFileInputRef.current?.click()}
+            className="gap-2"
+          >
             <UploadCloud className="w-4 h-4" />
-            <span>Upload New Resume</span>
+            <span>Upload PDF Resume</span>
           </Button>
         </div>
       </div>
 
-      {uploadSuccess && (
+      {statusMessage && (
         <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-200 flex items-center gap-3 text-sm">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          <span>Resume successfully uploaded, parsed into structured fields, and cached for Safari autofill!</span>
+          <span>{statusMessage}</span>
         </div>
       )}
 
-      {/* Active Resume Hero Card */}
-      <Card className="border-blue-200/80 dark:border-blue-900/40 bg-linear-to-b from-blue-50/30 to-white dark:from-blue-950/10 dark:to-zinc-900">
-        <CardContent className="p-6 sm:p-8">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-            <div className="flex items-start gap-4">
-              <div className="h-14 w-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
-                <FileText className="w-7 h-7" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                    {activeResume.title}
-                  </h2>
-                  <Badge variant="success">Active Default for Autofill</Badge>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
-                  <span className="font-mono text-zinc-700 dark:text-zinc-300">
-                    {activeResume.fileName}
-                  </span>
-                  <span>&bull;</span>
-                  <span>{activeResume.fileSize}</span>
-                  <span>&bull;</span>
-                  <span>Uploaded {activeResume.uploadedAt}</span>
-                </div>
-                <p className="text-xs text-zinc-600 dark:text-zinc-400 pt-1">
-                  Ready for auto-uploading to resume attachment inputs on supported job portals.
-                </p>
-              </div>
-            </div>
+      {errorMessage && (
+        <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 text-red-800 dark:text-red-200 flex items-center gap-3 text-sm">
+          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
 
-            {/* ATS Score & Metrics */}
-            <div className="flex items-center gap-6 shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-200/80 dark:border-zinc-800 pt-4 lg:pt-0 lg:pl-6">
-              <div className="text-center">
-                <div className="text-2xl font-black text-blue-600 dark:text-blue-400">
-                  {activeResume.atsScore}
-                  <span className="text-sm font-normal text-zinc-400">/100</span>
-                </div>
-                <div className="text-[11px] font-semibold uppercase text-zinc-400 mt-0.5">
-                  ATS Score
-                </div>
-              </div>
+      {/* Active Resume Card */}
+      {!isLoading && activeResume && (
+        <ActiveResumeCard
+          resume={activeResume}
+          onDownload={handleDownload}
+          onRequestReplace={handleRequestReplace}
+          onRequestDelete={(r) =>
+            setPendingAction({ kind: "delete", resumeId: r.id, fileName: r.fileName })
+          }
+        />
+      )}
 
-              <div className="text-center">
-                <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100">
-                  {activeResume.extractedSkillsCount}
-                </div>
-                <div className="text-[11px] font-semibold uppercase text-zinc-400 mt-0.5">
-                  Skills Parsed
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-                  <Download className="w-3.5 h-3.5" /> Download PDF
-                </Button>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Two Column Layout: Dropzone & Targeted Resumes */}
+      {/* Upload Zone & Stored Resumes List */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Upload Zone */}
-        <Card className="border-dashed border-2 hover:border-blue-400 transition-colors">
-          <CardContent className="p-8 text-center flex flex-col items-center justify-center space-y-4">
-            <div className="h-12 w-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 dark:text-zinc-400">
-              <UploadCloud className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">
-                Drop your updated resume here
-              </h3>
-              <p className="text-xs text-zinc-500 mt-1 max-w-xs">
-                Supports PDF and DOCX up to 10MB. ApplyMate extracts your experiences, skills, and links automatically.
-              </p>
-            </div>
-            <Button
-              onClick={handleSimulatedUpload}
-              size="sm"
-              variant="secondary"
-              className="text-xs"
-            >
-              Browse Files
-            </Button>
-          </CardContent>
-        </Card>
+        <ResumeUploadZone onFileSelected={handleUploadSelected} />
 
-        {/* Stored Resumes List */}
         <div className="lg:col-span-2 space-y-3">
           <div className="flex items-center justify-between pb-1">
             <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-500">
-              Stored Targeted Resumes ({resumes.length})
+              Stored PDF Resumes ({resumes.length})
             </h3>
             <span className="text-xs text-zinc-400">
-              Switch default depending on role focus
+              Stored locally in IndexedDB
             </span>
           </div>
 
-          {resumes.map((resume) => (
-            <Card
-              key={resume.id}
-              className={`p-5 transition-all ${
-                resume.isDefault
-                  ? "border-blue-500/50 bg-blue-50/10 dark:bg-blue-950/10 shadow-xs"
-                  : "hover:border-zinc-300 dark:hover:border-zinc-700"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
-                      resume.isDefault
-                        ? "bg-blue-600 text-white"
-                        : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500"
-                    }`}
-                  >
-                    <FileText className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 truncate">
-                        {resume.title}
-                      </span>
-                      {resume.isDefault && (
-                        <Badge variant="info" className="text-[10px]">
-                          Default
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-zinc-500 mt-0.5">
-                      <span>{resume.fileName}</span>
-                      <span>&bull;</span>
-                      <span>ATS: {resume.atsScore}/100</span>
-                      <span>&bull;</span>
-                      <span>{resume.fileSize}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {!resume.isDefault && (
-                    <Button
-                      onClick={() => setDefault(resume.id)}
-                      size="sm"
-                      variant="outline"
-                      className="text-xs"
-                    >
-                      Set as Default
-                    </Button>
-                  )}
-                  <Button size="sm" variant="ghost" className="p-2 text-zinc-400 hover:text-zinc-700">
-                    <Download className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))}
+          {isLoading ? (
+            <div className="p-8 text-center text-sm text-zinc-500">
+              Loading stored resumes…
+            </div>
+          ) : (
+            <ResumeList
+              resumes={resumes}
+              onRequestSelectActive={(r) =>
+                setPendingAction({
+                  kind: "select_active",
+                  resumeId: r.id,
+                  fileName: r.fileName,
+                  fileSize: r.fileSize,
+                })
+              }
+              onRequestReplace={handleRequestReplace}
+              onRequestDelete={(r) =>
+                setPendingAction({ kind: "delete", resumeId: r.id, fileName: r.fileName })
+              }
+              onDownload={handleDownload}
+            />
+          )}
         </div>
       </div>
+
+      {/* Explicit Confirmation Modal */}
+      <ResumeConfirmationModal
+        action={pendingAction}
+        isBusy={isBusy}
+        onConfirm={handleConfirmAction}
+        onCancel={() => setPendingAction(null)}
+      />
     </div>
   );
 }

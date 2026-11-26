@@ -1,27 +1,35 @@
 /**
- * ApplyMate — Reusable One-Click Autofill Engine
+ * ApplyMate — Reusable One-Click Autofill Engine (v2)
  *
  * Connects the Form Detection Engine (`fieldClassifier.ts`) with the candidate's
  * saved profile (`browser.storage.local` / `DEFAULT_PROFILE`).
  *
- * Guarantees & Safety Guards:
+ * Features & Safety Guards:
  *  - Fills ONLY empty fields (preserves existing user-entered values).
- *  - Skips low-confidence (< 0.70) and ambiguous fields.
+ *  - Skips low-confidence (< 0.70) and ambiguous fields, flagging them for manual attention.
  *  - Never fills salary or notice period unless explicitly configured.
- *  - Never fills demographic fields (handled by classifier + double-guarded here).
- *  - Never clicks submit/application buttons or bypasses website validation.
- *  - Uses native prototype value setter + input/change events for React/Vue/Angular.
+ *  - Never fills demographic fields or clicks submit buttons.
+ *  - Visual feedback: green (filled), neutral slate (skipped), red (error/failed).
+ *  - Detailed review items (`fields[]`) + summary counts.
+ *  - Single-field manual fill (`fillSingleField`), Undo (`undoLastAutofill`),
+ *    and duplicate autofill prevention (`resetAutofillState`).
  */
 
 import type { CandidateProfile } from "../../src/types/profile.ts";
 import { DEFAULT_PROFILE } from "../../src/lib/profile/defaultProfile.ts";
 import type {
+  JobPlatform,
   SemanticFieldType,
+  ClassifiedFieldInfo,
   AutofillFieldResult,
   AutofillExecutionResult,
   AutofillSummary,
+  FieldReviewItem,
+  UndoAutofillResult,
+  FillSingleFieldResult,
 } from "../src/types.ts";
-import { classifyFormField } from "./fieldClassifier.ts";
+import { detectJobPlatform } from "../src/detector.ts";
+import { classifyFieldForPlatform, getSiteAdapter } from "./siteAdapters.ts";
 
 export const PROFILE_STORAGE_KEY = "applymate_profile";
 export const MIN_AUTOFILL_CONFIDENCE = 0.70;
@@ -29,12 +37,59 @@ export const MIN_AUTOFILL_CONFIDENCE = 0.70;
 const DEFAULT_UNCONFIGURED_NOTICE = "Available immediately / 2 weeks";
 const DEFAULT_UNCONFIGURED_SALARY = "Competitive";
 
+export type HighlightKind = "success" | "skipped" | "error";
+
 export interface AutofillOptions {
-  /** Override root DOM node to scan (defaults to `document`) */
+  /** Override root DOM node to scan (defaults to site adapter root or `document`) */
   root?: Document | HTMLElement;
+  /** Override detected platform (useful in tests) */
+  platform?: JobPlatform;
   /** Allow filling default noticePeriod/desiredSalary placeholders (default: false) */
   allowDefaultPreferences?: boolean;
+  /** Bypass duplicate-autofill guard (e.g. after explicit rerun) */
+  force?: boolean;
 }
+
+// ─── Module-level state for Undo, Manual Fill, & Duplicate Prevention ────────
+
+interface UndoEntry {
+  element: HTMLElement;
+  tag: string;
+  prevValue: string;
+  prevSelectedIndex: number;
+}
+
+interface RegisteredField {
+  element: HTMLElement;
+  classification: ClassifiedFieldInfo;
+  reviewItem: FieldReviewItem;
+}
+
+const scannedFieldRegistry = new Map<string, RegisteredField>();
+const originalStyleMap = new WeakMap<
+  HTMLElement,
+  { outline: string; boxShadow: string; transition: string }
+>();
+
+let undoStack: UndoEntry[] = [];
+let isAutofillRunning = false;
+let lastAutofilledRoot: Document | HTMLElement | null = null;
+let lastExecutionResult: AutofillExecutionResult | null = null;
+
+/**
+ * Clears duplicate-autofill lock & field registry (called on Undo or Rerun Detection).
+ */
+export function resetAutofillState(): void {
+  lastAutofilledRoot = null;
+  lastExecutionResult = null;
+  scannedFieldRegistry.clear();
+}
+
+export function canUndoAutofill(): boolean {
+  return undoStack.length > 0;
+}
+
+// ─── Storage ─────────────────────────────────────────────────────────────────
 
 /**
  * Loads the candidate's saved profile from extension storage (`browser.storage.local`
@@ -61,6 +116,8 @@ export async function loadSavedProfile(): Promise<CandidateProfile> {
   }
   return DEFAULT_PROFILE;
 }
+
+// ─── DOM Helpers ─────────────────────────────────────────────────────────────
 
 /**
  * Sets native value using element prototype descriptor so React 18/19, Vue,
@@ -128,7 +185,7 @@ export function selectBestOption(
     }
   }
 
-  // 2. "Fresher" normalisation — if target is "fresher" or "0"
+  // 2. "Fresher" normalisation
   if (lowerTarget === "fresher" || lowerTarget === "0") {
     for (let i = 0; i < options.length; i++) {
       const opt = options[i];
@@ -146,7 +203,7 @@ export function selectBestOption(
     }
   }
 
-  // 3. Numeric year matching — e.g. target "2" matches "1-2 years", "2 years"
+  // 3. Numeric year matching
   const numMatch = lowerTarget.match(/^(\d+)$/);
   if (numMatch) {
     const targetNum = parseInt(numMatch[1], 10);
@@ -171,7 +228,7 @@ export function selectBestOption(
     }
   }
 
-  // 4. Substring / keyword match (bidirectional, skipping empty placeholder options)
+  // 4. Substring / keyword match
   for (let i = 0; i < options.length; i++) {
     const opt = options[i];
     if (opt.disabled || isPlaceholderOption(opt)) continue;
@@ -201,31 +258,64 @@ export function dispatchInputEvents(el: HTMLElement): void {
   el.dispatchEvent(new Event("blur", { bubbles: true }));
 }
 
+const HIGHLIGHT_STYLES: Record<HighlightKind, { outline: string; boxShadow: string }> = {
+  success: {
+    outline: "2px solid #10b981",
+    boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.25)",
+  },
+  skipped: {
+    outline: "2px solid #94a3b8",
+    boxShadow: "0 0 0 3px rgba(148, 163, 184, 0.18)",
+  },
+  error: {
+    outline: "2px solid #ef4444",
+    boxShadow: "0 0 0 3px rgba(239, 68, 68, 0.22)",
+  },
+};
+
 /**
- * Visually highlights a successfully autofilled field with an emerald outline.
+ * Visually highlights a field based on outcome:
+ *  - "success": green (#10b981)
+ *  - "skipped": neutral slate (#94a3b8)
+ *  - "error":   red (#ef4444)
  */
-export function highlightFilledField(el: HTMLElement): void {
+export function highlightField(el: HTMLElement, kind: HighlightKind): void {
   if (!el.style) return;
-  const originalOutline = el.style.outline;
-  const originalBoxShadow = el.style.boxShadow;
-  const originalTransition = el.style.transition;
-
-  el.style.transition = "outline 0.2s ease, box-shadow 0.2s ease";
-  el.style.outline = "2px solid #10b981";
-  el.style.boxShadow = "0 0 0 3px rgba(16, 185, 129, 0.25)";
-
-  if (typeof setTimeout === "function") {
-    setTimeout(() => {
-      el.style.outline = originalOutline;
-      el.style.boxShadow = originalBoxShadow;
-      el.style.transition = originalTransition;
-    }, 3500);
+  if (!originalStyleMap.has(el)) {
+    originalStyleMap.set(el, {
+      outline: el.style.outline,
+      boxShadow: el.style.boxShadow,
+      transition: el.style.transition,
+    });
   }
+
+  const palette = HIGHLIGHT_STYLES[kind];
+  el.style.transition = "outline 0.2s ease, box-shadow 0.2s ease";
+  el.style.outline = palette.outline;
+  el.style.boxShadow = palette.boxShadow;
+}
+
+export function clearFieldHighlight(el: HTMLElement): void {
+  if (!el.style) return;
+  const orig = originalStyleMap.get(el);
+  if (orig) {
+    el.style.outline = orig.outline;
+    el.style.boxShadow = orig.boxShadow;
+    el.style.transition = orig.transition;
+    originalStyleMap.delete(el);
+  } else {
+    el.style.outline = "";
+    el.style.boxShadow = "";
+  }
+}
+
+/** Backward-compatible alias */
+export function highlightFilledField(el: HTMLElement): void {
+  highlightField(el, "success");
 }
 
 /**
  * Checks whether a form control is empty and eligible to be filled.
- * Preserves any existing user-entered value.
  */
 export function isFieldEmpty(
   el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
@@ -244,8 +334,6 @@ export function isFieldEmpty(
 
 /**
  * Resolves the candidate profile value for a semantic field type.
- * Enforces safety rule: never returns salary or notice period unless
- * explicitly configured by the user.
  */
 export function resolveValueForField(
   type: SemanticFieldType,
@@ -349,137 +437,446 @@ export function resolveValueForField(
   }
 }
 
+// ─── Core Autofill Execution ─────────────────────────────────────────────────
+
 /**
- * Executes one-click autofill across all detected form controls in `root`
- * (defaults to `document`) using the provided `CandidateProfile`.
+ * Executes one-click autofill across all detected form controls in `root`.
+ * Prevents duplicate runs on the same form unless undone or forced.
  */
 export function executeAutofill(
   profile: CandidateProfile,
   options: AutofillOptions = {}
 ): AutofillExecutionResult {
+  const activePlatform: JobPlatform =
+    options.platform ??
+    (typeof location !== "undefined"
+      ? detectJobPlatform(location.href, location.hostname)
+      : "Generic Application");
+
+  const adapter = getSiteAdapter(activePlatform);
   const rootNode =
-    options.root ?? (typeof document !== "undefined" ? document : null);
+    options.root ??
+    (typeof document !== "undefined"
+      ? (adapter.getFormRoot?.(document) ?? document)
+      : null);
 
   if (!rootNode || typeof rootNode.querySelectorAll !== "function") {
-    const emptySummary: AutofillSummary = {
-      detectedFields: 0,
-      filledFields: 0,
-      skippedFields: 0,
-      failedFields: 0,
-    };
     return {
       success: false,
       filledCount: 0,
       totalFieldsFound: 0,
       filledFields: [],
-      summary: emptySummary,
+      fields: [],
+      summary: {
+        detectedFields: 0,
+        filledFields: 0,
+        skippedFields: 0,
+        failedFields: 0,
+        manualAttentionFields: 0,
+      },
+      canUndo: canUndoAutofill(),
       message: "No document available to scan.",
     };
   }
 
-  const elements = Array.from(
-    rootNode.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
-      "input, textarea, select"
-    )
-  );
+  // Prevent concurrent or duplicate autofill operations on the same root
+  if (isAutofillRunning) {
+    return {
+      success: false,
+      filledCount: 0,
+      totalFieldsFound: 0,
+      filledFields: [],
+      fields: lastExecutionResult?.fields ?? [],
+      summary: lastExecutionResult?.summary ?? {
+        detectedFields: 0,
+        filledFields: 0,
+        skippedFields: 0,
+        failedFields: 0,
+        manualAttentionFields: 0,
+      },
+      canUndo: canUndoAutofill(),
+      duplicatePrevented: true,
+      message: "Autofill is already in progress.",
+    };
+  }
 
-  const filledFields: AutofillFieldResult[] = [];
-  let detectedCount = 0;
-  let skippedCount = 0;
-  let failedCount = 0;
+  if (!options.force && lastAutofilledRoot === rootNode && lastExecutionResult) {
+    return {
+      ...lastExecutionResult,
+      duplicatePrevented: true,
+      canUndo: canUndoAutofill(),
+      message: "Autofill already completed for this form. Use Undo or Rerun Detection to run again.",
+    };
+  }
 
-  for (const el of elements) {
-    // Never touch ApplyMate's own Shadow DOM UI or disabled/readOnly controls
-    if (typeof el.closest === "function" && el.closest("#applymate-extension-root")) {
-      continue;
-    }
-    if (el.disabled || (el as HTMLInputElement).readOnly) {
-      continue;
-    }
+  isAutofillRunning = true;
 
-    const classification = classifyFormField(el);
-    if (!classification) continue;
+  try {
+    const elements = Array.from(
+      rootNode.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+        "input, textarea, select"
+      )
+    );
 
-    detectedCount++;
+    const filledFields: AutofillFieldResult[] = [];
+    const reviewItems: FieldReviewItem[] = [];
+    const newUndoEntries: UndoEntry[] = [];
 
-    // Safety guard 1: Skip low-confidence or ambiguous fields
-    if (
-      classification.confidence < MIN_AUTOFILL_CONFIDENCE ||
-      classification.ambiguous
-    ) {
-      skippedCount++;
-      continue;
-    }
+    scannedFieldRegistry.clear();
 
-    // Safety guard 2: Preserve existing user-entered values (fill only empty fields)
-    if (!isFieldEmpty(el)) {
-      skippedCount++;
-      continue;
-    }
+    let detectedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+    let manualAttentionCount = 0;
 
-    // Safety guard 3: Resolve profile value (respects explicit salary/notice rules)
-    const value = resolveValueForField(classification.type, profile, options);
-    if (!value) {
-      skippedCount++;
-      continue;
-    }
+    for (const el of elements) {
+      if (typeof el.closest === "function" && el.closest("#applymate-extension-root")) {
+        continue;
+      }
+      if (el.disabled || (el as HTMLInputElement).readOnly) {
+        continue;
+      }
 
-    const tag = (el.tagName || "").toUpperCase();
+      const classification = classifyFieldForPlatform(el, activePlatform);
+      if (!classification) continue;
 
-    try {
-      if (tag === "INPUT" || tag === "TEXTAREA") {
-        setNativeValue(el as HTMLInputElement | HTMLTextAreaElement, value);
-        dispatchInputEvents(el);
-        highlightFilledField(el);
-        filledFields.push({
+      const fieldId = `am-field-${detectedCount}`;
+      detectedCount++;
+
+      const tag = (el.tagName || "").toUpperCase();
+      const suggested =
+        resolveValueForField(classification.type, profile, {
+          ...options,
+          allowDefaultPreferences: true,
+        }) ?? undefined;
+
+      // Guard 1: Low-confidence or ambiguous fields -> manual attention
+      if (
+        classification.confidence < MIN_AUTOFILL_CONFIDENCE ||
+        classification.ambiguous
+      ) {
+        manualAttentionCount++;
+        skippedCount++;
+        highlightField(el, "skipped");
+        const item: FieldReviewItem = {
+          fieldId,
           fieldType: classification.type,
           fieldName: classification.label,
-          valueFilled: value,
-          success: true,
-        });
-      } else if (tag === "SELECT") {
-        const selected = selectBestOption(el as HTMLSelectElement, value);
-        if (selected) {
+          status: "manual_attention",
+          confidence: classification.confidence,
+          ambiguous: classification.ambiguous,
+          suggestedValue: suggested,
+          reason: classification.ambiguous
+            ? "Ambiguous field — please review & fill manually"
+            : "Low confidence — please verify manually",
+        };
+        reviewItems.push(item);
+        scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
+        continue;
+      }
+
+      // Guard 2: Preserve existing user-entered values
+      if (!isFieldEmpty(el)) {
+        skippedCount++;
+        highlightField(el, "skipped");
+        const currentVal =
+          tag === "SELECT"
+            ? (el as HTMLSelectElement).options?.[(el as HTMLSelectElement).selectedIndex]?.text ?? ""
+            : (el as HTMLInputElement | HTMLTextAreaElement).value ?? "";
+        const item: FieldReviewItem = {
+          fieldId,
+          fieldType: classification.type,
+          fieldName: classification.label,
+          status: "skipped",
+          confidence: classification.confidence,
+          ambiguous: false,
+          valueFilled: currentVal,
+          suggestedValue: suggested,
+          reason: "Preserved existing value",
+        };
+        reviewItems.push(item);
+        scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
+        continue;
+      }
+
+      // Guard 3: Resolve profile value (respects explicit salary/notice rules)
+      const value = resolveValueForField(classification.type, profile, options);
+      if (!value) {
+        const isPref =
+          classification.type === "expectedSalary" ||
+          classification.type === "noticePeriod";
+        if (isPref) manualAttentionCount++;
+        skippedCount++;
+        highlightField(el, "skipped");
+        const item: FieldReviewItem = {
+          fieldId,
+          fieldType: classification.type,
+          fieldName: classification.label,
+          status: isPref ? "manual_attention" : "skipped",
+          confidence: classification.confidence,
+          ambiguous: false,
+          suggestedValue: suggested,
+          reason: isPref
+            ? "Not explicitly configured — fill manually if needed"
+            : "No saved value in profile",
+        };
+        reviewItems.push(item);
+        scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
+        continue;
+      }
+
+      const prevValue =
+        tag === "SELECT" ? "" : (el as HTMLInputElement | HTMLTextAreaElement).value ?? "";
+      const prevSelectedIndex =
+        tag === "SELECT" ? (el as HTMLSelectElement).selectedIndex ?? 0 : -1;
+
+      try {
+        if (tag === "INPUT" || tag === "TEXTAREA") {
+          setNativeValue(el as HTMLInputElement | HTMLTextAreaElement, value);
           dispatchInputEvents(el);
-          highlightFilledField(el);
+          highlightField(el, "success");
+          newUndoEntries.push({ element: el, tag, prevValue, prevSelectedIndex });
           filledFields.push({
             fieldType: classification.type,
             fieldName: classification.label,
             valueFilled: value,
             success: true,
           });
+          const item: FieldReviewItem = {
+            fieldId,
+            fieldType: classification.type,
+            fieldName: classification.label,
+            status: "filled",
+            confidence: classification.confidence,
+            ambiguous: false,
+            valueFilled: value,
+            reason: "Autofilled from profile",
+          };
+          reviewItems.push(item);
+          scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
+        } else if (tag === "SELECT") {
+          const selected = selectBestOption(el as HTMLSelectElement, value);
+          if (selected) {
+            dispatchInputEvents(el);
+            highlightField(el, "success");
+            newUndoEntries.push({ element: el, tag, prevValue, prevSelectedIndex });
+            filledFields.push({
+              fieldType: classification.type,
+              fieldName: classification.label,
+              valueFilled: value,
+              success: true,
+            });
+            const item: FieldReviewItem = {
+              fieldId,
+              fieldType: classification.type,
+              fieldName: classification.label,
+              status: "filled",
+              confidence: classification.confidence,
+              ambiguous: false,
+              valueFilled: value,
+              reason: "Matched dropdown option",
+            };
+            reviewItems.push(item);
+            scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
+          } else {
+            failedCount++;
+            highlightField(el, "error");
+            const item: FieldReviewItem = {
+              fieldId,
+              fieldType: classification.type,
+              fieldName: classification.label,
+              status: "failed",
+              confidence: classification.confidence,
+              ambiguous: false,
+              suggestedValue: value,
+              reason: `No matching option for "${value}"`,
+            };
+            reviewItems.push(item);
+            scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
+          }
         } else {
-          failedCount++;
+          skippedCount++;
         }
-      } else {
-        skippedCount++;
+      } catch {
+        failedCount++;
+        highlightField(el, "error");
+        const item: FieldReviewItem = {
+          fieldId,
+          fieldType: classification.type,
+          fieldName: classification.label,
+          status: "failed",
+          confidence: classification.confidence,
+          ambiguous: false,
+          suggestedValue: value,
+          reason: "Failed to write value to element",
+        };
+        reviewItems.push(item);
+        scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
       }
+    }
+
+    if (newUndoEntries.length > 0) {
+      undoStack = newUndoEntries;
+    }
+
+    const summary: AutofillSummary = {
+      detectedFields: detectedCount,
+      filledFields: filledFields.length,
+      skippedFields: skippedCount,
+      failedFields: failedCount,
+      manualAttentionFields: manualAttentionCount,
+    };
+
+    const success = filledFields.length > 0;
+    const message = success
+      ? `Autofilled ${filledFields.length} of ${detectedCount} detected field${detectedCount !== 1 ? "s" : ""}.`
+      : detectedCount > 0
+        ? "No empty matching fields needed autofilling."
+        : "No matching fields could be filled on this page.";
+
+    const result: AutofillExecutionResult = {
+      success,
+      filledCount: filledFields.length,
+      totalFieldsFound: detectedCount,
+      filledFields,
+      fields: reviewItems,
+      summary,
+      canUndo: undoStack.length > 0,
+      duplicatePrevented: false,
+      message,
+    };
+
+    lastAutofilledRoot = rootNode;
+    lastExecutionResult = result;
+    return result;
+  } finally {
+    isAutofillRunning = false;
+  }
+}
+
+/**
+ * Manually fills a single registered field (by `fieldId`) with either `customValue`
+ * or the resolved profile value. Records the change in `undoStack`.
+ */
+export function fillSingleField(
+  fieldId: string,
+  profile: CandidateProfile,
+  customValue?: string
+): FillSingleFieldResult {
+  const entry = scannedFieldRegistry.get(fieldId);
+  if (!entry) {
+    return {
+      success: false,
+      message: "Field is no longer available. Try rerunning detection.",
+    };
+  }
+
+  const { element: el, classification, reviewItem } = entry;
+  const value =
+    customValue !== undefined && customValue.trim() !== ""
+      ? customValue.trim()
+      : resolveValueForField(classification.type, profile, {
+          allowDefaultPreferences: true,
+        });
+
+  if (!value) {
+    return {
+      success: false,
+      message: `No value available for ${classification.label}.`,
+    };
+  }
+
+  const tag = (el.tagName || "").toUpperCase();
+  const prevValue =
+    tag === "SELECT" ? "" : (el as HTMLInputElement | HTMLTextAreaElement).value ?? "";
+  const prevSelectedIndex =
+    tag === "SELECT" ? (el as HTMLSelectElement).selectedIndex ?? 0 : -1;
+
+  try {
+    if (tag === "INPUT" || tag === "TEXTAREA") {
+      setNativeValue(el as HTMLInputElement | HTMLTextAreaElement, value);
+      dispatchInputEvents(el);
+      highlightField(el, "success");
+    } else if (tag === "SELECT") {
+      const ok = selectBestOption(el as HTMLSelectElement, value);
+      if (!ok) {
+        highlightField(el, "error");
+        return {
+          success: false,
+          message: `No dropdown option matches "${value}".`,
+        };
+      }
+      dispatchInputEvents(el);
+      highlightField(el, "success");
+    } else {
+      return { success: false, message: "Unsupported element type." };
+    }
+
+    undoStack.push({ element: el, tag, prevValue, prevSelectedIndex });
+
+    const updatedItem: FieldReviewItem = {
+      ...reviewItem,
+      status: "filled",
+      valueFilled: value,
+      reason: "Manually filled via review",
+    };
+    entry.reviewItem = updatedItem;
+
+    return {
+      success: true,
+      field: updatedItem,
+      message: `Filled ${classification.label}.`,
+    };
+  } catch {
+    highlightField(el, "error");
+    return {
+      success: false,
+      message: `Could not fill ${classification.label}.`,
+    };
+  }
+}
+
+/**
+ * Undoes the most recent autofill operation, restoring every modified field's
+ * previous value/selection, dispatching events, and clearing highlights.
+ */
+export function undoLastAutofill(): UndoAutofillResult {
+  if (undoStack.length === 0) {
+    return {
+      success: false,
+      restoredCount: 0,
+      message: "Nothing to undo.",
+    };
+  }
+
+  let restoredCount = 0;
+  for (const item of undoStack) {
+    try {
+      if (item.tag === "SELECT") {
+        (item.element as HTMLSelectElement).selectedIndex = item.prevSelectedIndex;
+      } else {
+        setNativeValue(
+          item.element as HTMLInputElement | HTMLTextAreaElement,
+          item.prevValue
+        );
+      }
+      dispatchInputEvents(item.element);
+      clearFieldHighlight(item.element);
+      restoredCount++;
     } catch {
-      failedCount++;
+      // Continue restoring remaining elements
     }
   }
 
-  const summary: AutofillSummary = {
-    detectedFields: detectedCount,
-    filledFields: filledFields.length,
-    skippedFields: skippedCount,
-    failedFields: failedCount,
-  };
-
-  const success = filledFields.length > 0;
-  const message = success
-    ? `Successfully autofilled ${filledFields.length} field${filledFields.length > 1 ? "s" : ""}!`
-    : detectedCount > 0
-      ? "No empty matching fields needed autofilling."
-      : "No matching fields could be filled on this page.";
+  undoStack = [];
+  // Allow autofill to run again after undo
+  lastAutofilledRoot = null;
+  lastExecutionResult = null;
 
   return {
-    success,
-    filledCount: filledFields.length,
-    totalFieldsFound: detectedCount,
-    filledFields,
-    summary,
-    message,
+    success: restoredCount > 0,
+    restoredCount,
+    message: `Undid autofill for ${restoredCount} field${restoredCount !== 1 ? "s" : ""}.`,
   };
 }
 

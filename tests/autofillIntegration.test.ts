@@ -5,6 +5,9 @@ import {
   runAutofill,
   resolveValueForField,
   isFieldEmpty,
+  undoLastAutofill,
+  fillSingleField,
+  resetAutofillState,
   PROFILE_STORAGE_KEY,
 } from "../extension/autofill/autofillEngine.ts";
 import { DEFAULT_PROFILE } from "../src/lib/profile/defaultProfile.ts";
@@ -228,19 +231,52 @@ test("Integration: fills empty inputs/textarea/select, preserves user values, sk
   assert.strictEqual(genderEl.value, "");
   assert.strictEqual(submitBtn.clicked, false);
 
+  // Visual feedback highlights
+  assert.ok(fullNameEl.style.outline.includes("#10b981"), "Green highlight for filled");
+  assert.ok(prefilledEmailEl.style.outline.includes("#94a3b8"), "Neutral highlight for skipped");
+  assert.ok(unmatchableSelect.style.outline.includes("#ef4444"), "Red highlight for failed");
+
   // Summary verification
   // Detected: fullName, email, bio, experience, country, expectedSalary, ambiguousOrg = 7
   // Filled: fullName, bio, expSelect = 3
-  // Skipped: prefilledEmail, salary (not explicitly configured), ambiguousOrg = 3
+  // Skipped: prefilledEmail, salary (manual_attention), ambiguousOrg (manual_attention) = 3
   // Failed: unmatchableSelect (India not in [US, Canada]) = 1
+  // Manual Attention: salary, ambiguousOrg = 2
   assert.deepStrictEqual(result.summary, {
     detectedFields: 7,
     filledFields: 3,
     skippedFields: 3,
     failedFields: 1,
+    manualAttentionFields: 2,
   });
   assert.strictEqual(result.success, true);
   assert.strictEqual(result.filledCount, 3);
+  assert.strictEqual(result.canUndo, true);
+  assert.strictEqual(result.fields?.length, 7);
+
+  // Duplicate autofill prevention
+  const dupResult = executeAutofill(DEFAULT_PROFILE, { root: mockDoc });
+  assert.strictEqual(dupResult.duplicatePrevented, true);
+
+  // Manual single-field fill for salary
+  const salaryItem = result.fields?.find((f) => f.fieldType === "expectedSalary");
+  assert.ok(salaryItem);
+  assert.strictEqual(salaryItem.status, "manual_attention");
+  const manualRes = fillSingleField(salaryItem.fieldId, DEFAULT_PROFILE, "15 LPA");
+  assert.strictEqual(manualRes.success, true);
+  assert.strictEqual(salaryEl.value, "15 LPA");
+  assert.strictEqual(manualRes.field?.status, "filled");
+
+  // Undo restores all modified fields & clears highlights
+  const undoRes = undoLastAutofill();
+  assert.strictEqual(undoRes.success, true);
+  assert.strictEqual(fullNameEl.value, "");
+  assert.strictEqual(bioTextarea.value, "");
+  assert.strictEqual(expSelect.selectedIndex, 0);
+  assert.strictEqual(salaryEl.value, "");
+  assert.strictEqual(fullNameEl.style.outline, "");
+
+  resetAutofillState();
 });
 
 test("Integration: React-controlled input prototype setter is invoked", () => {

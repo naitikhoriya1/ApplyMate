@@ -18,6 +18,10 @@ import type {
   PongMessage,
   GetProfileResMessage,
   AutofillResMessage,
+  AutofillExecutionResult,
+  FieldReviewItem,
+  UndoAutofillResMessage,
+  FillSingleFieldResMessage,
 } from "./types";
 import type { CandidateProfile } from "../../src/types/profile";
 
@@ -80,7 +84,15 @@ const autofillBtnText  = $("autofill-btn-text");
 const autofillBtnSub   = $("autofill-btn-sub");
 const autofillResult   = $("autofill-result");
 const autofillResultMsg = $("autofill-result-msg");
-const autofillChips    = $("autofill-chips");
+const statDetected     = $("stat-detected");
+const statFilled       = $("stat-filled");
+const statSkipped      = $("stat-skipped");
+const statFailed       = $("stat-failed");
+const manualBanner     = $("manual-banner");
+const manualBannerText = $("manual-banner-text");
+const undoBtn          = $<HTMLButtonElement>("undo-btn");
+const rerunBtn         = $<HTMLButtonElement>("rerun-btn");
+const reviewList       = $("review-list");
 const pageTitle        = $("page-title");
 const pageHost         = $("page-host");
 const pageUrl          = $("page-url");
@@ -94,7 +106,9 @@ const refreshBtn       = $<HTMLButtonElement>("refresh-btn");
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let isLoading = false;
+let isAutofilling = false;
 let lastPageTs = 0;
+let lastAutofillResult: AutofillExecutionResult | null = null;
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
 function setStatus(state: "active" | "loading" | "error", text: string): void {
@@ -182,25 +196,94 @@ function renderFormDetection(form: { detected: boolean; platform: string; fields
   }
 }
 
-// ─── Autofill result rendering ────────────────────────────────────────────────
-function renderAutofillResult(result: AutofillResMessage["payload"]): void {
+// ─── Autofill Review Interface rendering ──────────────────────────────────────
+const STATUS_LABELS: Record<FieldReviewItem["status"], string> = {
+  filled: "Filled",
+  skipped: "Skipped",
+  failed: "Failed",
+  manual_attention: "Manual",
+};
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderAutofillResult(result: AutofillExecutionResult | null | undefined): void {
   if (!result) return;
+  lastAutofillResult = result;
 
   autofillResult.style.display = "block";
+  autofillResult.className = `autofill-result ${result.success ? "success" : "empty"}`;
 
-  if (result.success) {
-    autofillResult.className = "autofill-result success";
-    (document.getElementById("autofill-result-icon") as unknown as Element).innerHTML = `<path d="M20 6 9 17l-5-5"/>`;
-    autofillResultMsg.textContent = result.message;
-    autofillChips.innerHTML = result.filledFields.map(
-      (f) => `<span class="autofill-chip">${f.fieldName}</span>`
-    ).join("");
-  } else {
-    autofillResult.className = "autofill-result empty";
-    (document.getElementById("autofill-result-icon") as unknown as Element).innerHTML = `<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>`;
-    autofillResultMsg.textContent = result.message;
-    autofillChips.innerHTML = "";
+  const iconEl = document.getElementById("autofill-result-icon") as unknown as Element | null;
+  if (iconEl) {
+    iconEl.innerHTML = result.success
+      ? `<path d="M20 6 9 17l-5-5"/>`
+      : `<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>`;
   }
+
+  autofillResultMsg.textContent = result.message;
+
+  const summary = result.summary ?? {
+    detectedFields: result.totalFieldsFound,
+    filledFields: result.filledCount,
+    skippedFields: 0,
+    failedFields: 0,
+    manualAttentionFields: 0,
+  };
+
+  statDetected.textContent = String(summary.detectedFields);
+  statFilled.textContent = String(summary.filledFields);
+  statSkipped.textContent = String(summary.skippedFields);
+  statFailed.textContent = String(summary.failedFields);
+
+  const manualCount = summary.manualAttentionFields ?? 0;
+  if (manualCount > 0) {
+    manualBanner.classList.remove("hidden");
+    manualBannerText.textContent = `${manualCount} field${manualCount !== 1 ? "s" : ""} require manual attention`;
+  } else {
+    manualBanner.classList.add("hidden");
+  }
+
+  undoBtn.disabled = !result.canUndo;
+
+  const fields = result.fields ?? [];
+  if (fields.length === 0) {
+    reviewList.innerHTML = "";
+    return;
+  }
+
+  reviewList.innerHTML = fields
+    .map((f) => {
+      const subText =
+        f.status === "filled" && f.valueFilled
+          ? truncate(f.valueFilled, 38)
+          : f.reason;
+      const needsManual = f.status !== "filled";
+      const defaultVal = escapeHtml(f.suggestedValue ?? "");
+      return `
+        <div class="review-item" data-field-id="${escapeHtml(f.fieldId)}">
+          <div class="review-item-top">
+            <span class="review-item-name">${escapeHtml(f.fieldName)}</span>
+            <span class="review-badge ${f.status}">${STATUS_LABELS[f.status]}</span>
+          </div>
+          <div class="review-item-sub">${escapeHtml(subText)}</div>
+          ${
+            needsManual
+              ? `<div class="review-manual-row">
+                   <input class="review-manual-input" type="text" value="${defaultVal}" placeholder="Enter value…" />
+                   <button class="review-manual-btn" type="button" data-fill-id="${escapeHtml(f.fieldId)}">Fill</button>
+                 </div>`
+              : ""
+          }
+        </div>
+      `;
+    })
+    .join("");
 }
 
 // ─── Main data fetch ──────────────────────────────────────────────────────────
@@ -258,28 +341,32 @@ async function loadAll(): Promise<void> {
 
 // ─── Autofill handler ─────────────────────────────────────────────────────────
 async function triggerAutofill(): Promise<void> {
+  if (isAutofilling) return;
+  isAutofilling = true;
+
   autofillBtn.disabled = true;
   autofillBtn.classList.add("filling");
   autofillBtnText.textContent = "Autofilling…";
   autofillBtnSub.textContent  = "Please wait";
-  // Hide any previous result
-  autofillResult.style.display = "none";
 
   try {
     const res = await ext.runtime.sendMessage({ type: "TRIGGER_AUTOFILL" }) as AutofillResMessage;
 
     if (res?.type === "AUTOFILL_RES" && res.payload) {
-      const { success, filledCount, message } = res.payload;
+      const { success, filledCount, duplicatePrevented, message } = res.payload;
 
       autofillBtn.classList.remove("filling");
-      autofillBtn.classList.add(success ? "filled" : "");
+      if (success) autofillBtn.classList.add("filled");
 
-      if (success) {
+      if (duplicatePrevented) {
+        autofillBtnText.textContent = "Already Filled";
+        autofillBtnSub.textContent  = "Undo or rerun below";
+      } else if (success) {
         autofillBtnText.textContent = `✓ Filled (${filledCount})`;
-        autofillBtnSub.textContent  = "Fields populated!";
+        autofillBtnSub.textContent  = "Review below";
       } else {
-        autofillBtnText.textContent = "No Fields Found";
-        autofillBtnSub.textContent  = message.slice(0, 30);
+        autofillBtnText.textContent = "No Fields Filled";
+        autofillBtnSub.textContent  = truncate(message, 28);
       }
 
       renderAutofillResult(res.payload);
@@ -289,13 +376,98 @@ async function triggerAutofill(): Promise<void> {
     autofillBtnText.textContent = "Error";
     autofillBtnSub.textContent  = "Could not reach page";
   } finally {
-    // Reset button after 5s
+    isAutofilling = false;
     setTimeout(() => {
       autofillBtn.disabled = false;
       autofillBtn.classList.remove("filling", "filled");
       autofillBtnText.textContent = "Autofill Page";
       autofillBtnSub.textContent  = "Fill detected fields";
-    }, 5000);
+    }, 3500);
+  }
+}
+
+async function handleUndo(): Promise<void> {
+  undoBtn.disabled = true;
+  try {
+    const res = await ext.runtime.sendMessage({ type: "UNDO_AUTOFILL" }) as UndoAutofillResMessage;
+    if (res?.type === "UNDO_AUTOFILL_RES" && res.payload) {
+      autofillResultMsg.textContent = res.payload.message;
+      if (res.payload.success && lastAutofillResult) {
+        lastAutofillResult.canUndo = false;
+        lastAutofillResult.success = false;
+        lastAutofillResult.filledCount = 0;
+        lastAutofillResult.summary = {
+          ...lastAutofillResult.summary,
+          filledFields: 0,
+        };
+        if (lastAutofillResult.fields) {
+          lastAutofillResult.fields = lastAutofillResult.fields.map((f) =>
+            f.status === "filled"
+              ? { ...f, status: "skipped", reason: "Undone by user", valueFilled: undefined }
+              : f
+          );
+        }
+        renderAutofillResult(lastAutofillResult);
+        autofillResultMsg.textContent = res.payload.message;
+      }
+    }
+  } catch {
+    autofillResultMsg.textContent = "Failed to undo autofill.";
+  }
+}
+
+async function handleRerunDetection(): Promise<void> {
+  rerunBtn.disabled = true;
+  try {
+    const res = await ext.runtime.sendMessage({ type: "RERUN_DETECTION" }) as PageInfoResMessage;
+    if (res?.type === "PAGE_INFO_RES" && res.payload) {
+      renderPageInfo(res.payload);
+      renderFormDetection(res.payload.formDetection);
+      autofillResultMsg.textContent = `Detection refreshed: ${res.payload.formDetection.fieldsCount} field(s) found.`;
+    }
+  } catch {
+    autofillResultMsg.textContent = "Could not rerun detection.";
+  } finally {
+    rerunBtn.disabled = false;
+  }
+}
+
+async function handleManualFieldFill(fieldId: string, customValue: string): Promise<void> {
+  try {
+    const res = await ext.runtime.sendMessage({
+      type: "FILL_SINGLE_FIELD",
+      payload: { fieldId, customValue },
+    }) as FillSingleFieldResMessage;
+
+    if (res?.type === "FILL_SINGLE_FIELD_RES" && res.payload) {
+      if (res.payload.success && res.payload.field && lastAutofillResult) {
+        const updated = res.payload.field;
+        lastAutofillResult.canUndo = true;
+        lastAutofillResult.success = true;
+        if (lastAutofillResult.fields) {
+          lastAutofillResult.fields = lastAutofillResult.fields.map((f) =>
+            f.fieldId === fieldId ? updated : f
+          );
+          const filled = lastAutofillResult.fields.filter((f) => f.status === "filled").length;
+          const skipped = lastAutofillResult.fields.filter((f) => f.status === "skipped").length;
+          const failed = lastAutofillResult.fields.filter((f) => f.status === "failed").length;
+          const manual = lastAutofillResult.fields.filter((f) => f.status === "manual_attention").length;
+          lastAutofillResult.filledCount = filled;
+          lastAutofillResult.summary = {
+            detectedFields: lastAutofillResult.fields.length,
+            filledFields: filled,
+            skippedFields: skipped + manual,
+            failedFields: failed,
+            manualAttentionFields: manual,
+          };
+        }
+        renderAutofillResult(lastAutofillResult);
+      } else {
+        autofillResultMsg.textContent = res.payload.message;
+      }
+    }
+  } catch {
+    autofillResultMsg.textContent = "Failed to fill field manually.";
   }
 }
 
@@ -312,4 +484,17 @@ document.addEventListener("DOMContentLoaded", () => {
   refreshBtn.addEventListener("click", loadAll);
   retryBtn.addEventListener("click",   loadAll);
   autofillBtn.addEventListener("click", triggerAutofill);
+  undoBtn.addEventListener("click", handleUndo);
+  rerunBtn.addEventListener("click", handleRerunDetection);
+  reviewList.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement | null;
+    const btn = target?.closest?.<HTMLButtonElement>("[data-fill-id]");
+    if (!btn) return;
+    const fieldId = btn.dataset.fillId;
+    if (!fieldId) return;
+    const row = btn.closest(".review-item");
+    const input = row?.querySelector<HTMLInputElement>(".review-manual-input");
+    const customValue = input?.value ?? "";
+    handleManualFieldFill(fieldId, customValue);
+  });
 });

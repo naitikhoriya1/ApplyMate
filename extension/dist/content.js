@@ -5,10 +5,10 @@
     if (!raw) return "";
     return raw.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().replace(/[_\-/\\.]+/g, " ").replace(/\s+/g, " ").trim();
   }
-  function readAttr(el, attr, propName) {
-    const fromAttr = typeof el.getAttribute === "function" ? el.getAttribute(attr) : null;
+  function readAttr(el, attr2, propName) {
+    const fromAttr = typeof el.getAttribute === "function" ? el.getAttribute(attr2) : null;
     if (fromAttr && fromAttr.trim()) return fromAttr;
-    const key = propName ?? attr;
+    const key = propName ?? attr2;
     const fromProp = el[key];
     return typeof fromProp === "string" ? fromProp : "";
   }
@@ -676,10 +676,12 @@
   ]);
   var SENSITIVE_DEMOGRAPHIC_PATTERN = /\b(age|gender|sex|sexual\s*orientation|pronouns|race|ethnicity|hispanic|latino|veteran|military\s*status|religion|marital\s*status|disability|handicap|caste|eeo|equal\s*opportunity|dob|date\s*of\s*birth|birth\s*date|national\s*id|aadhaar|pan\s*number|ssn|social\s*security|passport)\b/i;
   var NON_CANDIDATE_PERSON_PATTERN = /\b(reference|emergency\s*contact|referee|guardian|nominee|manager\s*name|supervisor)\b/i;
+  var CAPTCHA_OR_BOT_PATTERN = /\b(captcha|recaptcha|hcaptcha|turnstile|bot\s*check|verification\s*code)\b/i;
   function shouldSkipElement(meta) {
     if (UNSUPPORTED_INPUT_TYPES.has(meta.inputType)) return true;
     if (SENSITIVE_DEMOGRAPHIC_PATTERN.test(meta.combined)) return true;
     if (NON_CANDIDATE_PERSON_PATTERN.test(meta.combined)) return true;
+    if (CAPTCHA_OR_BOT_PATTERN.test(meta.combined)) return true;
     return false;
   }
   function classifyFormField(el) {
@@ -727,11 +729,15 @@
     },
     {
       platform: "LinkedIn",
-      match: (_url, host) => host.includes("linkedin.com") && typeof window !== "undefined" && window.location.pathname.includes("/jobs/")
+      match: (url, host) => host.includes("linkedin.com") && (url.includes("/jobs/") || typeof window !== "undefined" && window.location.pathname.includes("/jobs/"))
     },
     {
       platform: "Indeed",
       match: (_url, host) => host.includes("indeed.com")
+    },
+    {
+      platform: "Naukri",
+      match: (_url, host) => host.includes("naukri.com")
     },
     {
       platform: "SmartRecruiters",
@@ -740,7 +746,7 @@
     // ── Indian job portals & career sites ───────────────────────────────────
     {
       platform: "Generic Application",
-      match: (url, host) => host.includes("creditsamadhaan.com") || host.includes("naukri.com") || host.includes("internshala.com") || host.includes("unstop.com") || host.includes("cutshort.io") || host.includes("hirist.tech") || host.includes("foundit.in") || host.includes("apna.co") || (host.includes("angellist.com") || host.includes("wellfound.com")) || Boolean(
+      match: (_url, host) => host.includes("creditsamadhaan.com") || host.includes("internshala.com") || host.includes("unstop.com") || host.includes("cutshort.io") || host.includes("hirist.tech") || host.includes("foundit.in") || host.includes("apna.co") || (host.includes("angellist.com") || host.includes("wellfound.com")) || Boolean(
         typeof document !== "undefined" && document.querySelector(
           "form[action*='/apply'], form[action*='/careers'], form[action*='/jobs']"
         )
@@ -930,10 +936,241 @@
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
 
+  // extension/autofill/siteAdapters.ts
+  function hint(type, label, confidence = 0.94) {
+    return {
+      type,
+      label,
+      confidence,
+      ambiguous: false,
+      matchedSignal: "name"
+    };
+  }
+  function attr(el, name) {
+    return ((typeof el.getAttribute === "function" ? el.getAttribute(name) : null) ?? "").toLowerCase().trim();
+  }
+  var linkedInAdapter = {
+    platform: "LinkedIn",
+    isMultiStep: true,
+    getFormRoot(doc) {
+      return doc.querySelector(
+        ".jobs-easy-apply-modal, [data-test-modal-id='easy-apply-modal'], [role='dialog']"
+      ) ?? doc;
+    },
+    classifyElementHint(el) {
+      const id = attr(el, "id");
+      const name = attr(el, "name");
+      const combined = `${id} ${name}`;
+      if (combined.includes("phonenumber") || combined.includes("nationalnumber")) {
+        return hint("phone", "Phone / Mobile Number", 0.95);
+      }
+      if (combined.includes("email")) {
+        return hint("email", "Email Address", 0.96);
+      }
+      if (combined.includes("city") || combined.includes("location-geo")) {
+        return hint("city", "City", 0.92);
+      }
+      return null;
+    }
+  };
+  var naukriAdapter = {
+    platform: "Naukri",
+    isMultiStep: true,
+    classifyElementHint(el) {
+      const name = attr(el, "name");
+      const id = attr(el, "id");
+      const combined = `${name} ${id}`;
+      if (/\b(totalexp|total_exp|experience)\b/i.test(combined)) {
+        return hint("experience", "Work Experience", 0.93);
+      }
+      if (/\b(noticeperiod|notice_period)\b/i.test(combined)) {
+        return hint("noticePeriod", "Notice Period", 0.93);
+      }
+      if (/\b(expectedctc|expected_ctc|expectedsalary)\b/i.test(combined)) {
+        return hint("expectedSalary", "Expected Salary / CTC", 0.92);
+      }
+      if (/\b(currentlocation|curr_loc|city)\b/i.test(combined)) {
+        return hint("city", "City", 0.92);
+      }
+      if (/\b(keyskills|key_skills)\b/i.test(combined)) {
+        return hint("skills", "Skills / Technologies", 0.93);
+      }
+      return null;
+    }
+  };
+  var indeedAdapter = {
+    platform: "Indeed",
+    isMultiStep: true,
+    getFormRoot(doc) {
+      return doc.querySelector(
+        "#ia-container, [data-testid='ia-form'], main"
+      ) ?? doc;
+    },
+    classifyElementHint(el) {
+      const testId = attr(el, "data-testid");
+      const name = attr(el, "name");
+      const combined = `${testId} ${name}`;
+      if (combined.includes("applicant.name") || combined.includes("input-applicant.name")) {
+        return hint("fullName", "Full Name", 0.95);
+      }
+      if (combined.includes("applicant.firstname")) {
+        return hint("firstName", "First Name", 0.95);
+      }
+      if (combined.includes("applicant.lastname")) {
+        return hint("lastName", "Last Name", 0.95);
+      }
+      if (combined.includes("applicant.email")) {
+        return hint("email", "Email Address", 0.96);
+      }
+      if (combined.includes("applicant.phonenumber")) {
+        return hint("phone", "Phone / Mobile Number", 0.95);
+      }
+      if (combined.includes("applicant.location.city")) {
+        return hint("city", "City", 0.94);
+      }
+      return null;
+    }
+  };
+  var greenhouseAdapter = {
+    platform: "Greenhouse",
+    isMultiStep: false,
+    getFormRoot(doc) {
+      return doc.querySelector("#application_form, [data-qa='greenhouse-form']") ?? doc;
+    },
+    classifyElementHint(el) {
+      const id = attr(el, "id");
+      const name = attr(el, "name");
+      if (id === "first_name" || name === "job_application[first_name]") {
+        return hint("firstName", "First Name", 0.97);
+      }
+      if (id === "last_name" || name === "job_application[last_name]") {
+        return hint("lastName", "Last Name", 0.97);
+      }
+      if (id === "email" || name === "job_application[email]") {
+        return hint("email", "Email Address", 0.98);
+      }
+      if (id === "phone" || name === "job_application[phone]") {
+        return hint("phone", "Phone / Mobile Number", 0.97);
+      }
+      if (id === "job_application_location" || name === "job_application[location]") {
+        return hint("location", "Current Location", 0.94);
+      }
+      return null;
+    }
+  };
+  var leverAdapter = {
+    platform: "Lever",
+    isMultiStep: false,
+    getFormRoot(doc) {
+      return doc.querySelector(".application-form, form[action*='lever.co']") ?? doc;
+    },
+    classifyElementHint(el) {
+      const name = attr(el, "name");
+      if (name === "name") return hint("fullName", "Full Name", 0.96);
+      if (name === "email") return hint("email", "Email Address", 0.98);
+      if (name === "phone") return hint("phone", "Phone / Mobile Number", 0.96);
+      if (name === "org") return hint("currentCompany", "Current Company", 0.94);
+      if (name === "location") return hint("location", "Current Location", 0.94);
+      if (name === "urls[linkedin]") return hint("linkedin", "LinkedIn Profile URL", 0.97);
+      if (name === "urls[github]") return hint("github", "GitHub Profile URL", 0.97);
+      if (name === "urls[portfolio]" || name === "urls[website]") {
+        return hint("portfolio", "Portfolio / Website", 0.95);
+      }
+      if (name === "comments") return hint("bio", "Bio / About Yourself", 0.9);
+      return null;
+    }
+  };
+  var workdayAdapter = {
+    platform: "Workday",
+    isMultiStep: true,
+    classifyElementHint(el) {
+      const autoId = attr(el, "data-automation-id");
+      if (!autoId) return null;
+      if (autoId.includes("firstname")) return hint("firstName", "First Name", 0.96);
+      if (autoId.includes("lastname")) return hint("lastName", "Last Name", 0.96);
+      if (autoId === "email") return hint("email", "Email Address", 0.98);
+      if (autoId.includes("phone-number") || autoId.includes("phonenumber")) {
+        return hint("phone", "Phone / Mobile Number", 0.96);
+      }
+      if (autoId.includes("addresssection_city") || autoId === "city") {
+        return hint("city", "City", 0.95);
+      }
+      if (autoId.includes("postalcode")) return hint("postalCode", "Postal / Pin Code", 0.95);
+      if (autoId.includes("country")) return hint("country", "Country", 0.94);
+      if (autoId.includes("linkedin")) return hint("linkedin", "LinkedIn Profile URL", 0.95);
+      if (autoId.includes("school")) return hint("educationSchool", "University / College", 0.93);
+      if (autoId.includes("degree")) return hint("educationDegree", "Degree / Qualification", 0.93);
+      return null;
+    }
+  };
+  var smartRecruitersAdapter = {
+    platform: "SmartRecruiters",
+    isMultiStep: true,
+    classifyElementHint(el) {
+      const testAttr = attr(el, "data-test");
+      const name = attr(el, "name");
+      const combined = `${testAttr} ${name}`;
+      if (combined.includes("first-name") || combined === "firstname") {
+        return hint("firstName", "First Name", 0.96);
+      }
+      if (combined.includes("last-name") || combined === "lastname") {
+        return hint("lastName", "Last Name", 0.96);
+      }
+      if (combined.includes("email")) return hint("email", "Email Address", 0.97);
+      if (combined.includes("phone")) return hint("phone", "Phone / Mobile Number", 0.96);
+      if (combined.includes("linkedin")) return hint("linkedin", "LinkedIn Profile URL", 0.95);
+      if (combined.includes("website") || combined.includes("portfolio")) {
+        return hint("portfolio", "Portfolio / Website", 0.93);
+      }
+      return null;
+    }
+  };
+  var genericAdapter = {
+    platform: "Generic Application",
+    isMultiStep: false
+  };
+  var ADAPTER_MAP = {
+    LinkedIn: linkedInAdapter,
+    Naukri: naukriAdapter,
+    Indeed: indeedAdapter,
+    Greenhouse: greenhouseAdapter,
+    Lever: leverAdapter,
+    Workday: workdayAdapter,
+    SmartRecruiters: smartRecruitersAdapter,
+    "Generic Application": genericAdapter
+  };
+  function getSiteAdapter(platform) {
+    return ADAPTER_MAP[platform] ?? genericAdapter;
+  }
+  function classifyFieldForPlatform(el, platform) {
+    const meta = extractFieldMetadata(el);
+    if (shouldSkipElement(meta)) return null;
+    const adapter = getSiteAdapter(platform);
+    if (adapter.classifyElementHint) {
+      const siteMatch = adapter.classifyElementHint(el);
+      if (siteMatch) return siteMatch;
+    }
+    return classifyFormField(el);
+  }
+
   // extension/autofill/autofillEngine.ts
   var MIN_AUTOFILL_CONFIDENCE = 0.7;
   var DEFAULT_UNCONFIGURED_NOTICE = "Available immediately / 2 weeks";
   var DEFAULT_UNCONFIGURED_SALARY = "Competitive";
+  var scannedFieldRegistry = /* @__PURE__ */ new Map();
+  var originalStyleMap = /* @__PURE__ */ new WeakMap();
+  var undoStack = [];
+  var isAutofillRunning = false;
+  var lastAutofilledRoot = null;
+  var lastExecutionResult = null;
+  function resetAutofillState() {
+    lastAutofilledRoot = null;
+    lastExecutionResult = null;
+    scannedFieldRegistry.clear();
+  }
+  function canUndoAutofill() {
+    return undoStack.length > 0;
+  }
   function setNativeValue(element, value) {
     const valueSetter = Object.getOwnPropertyDescriptor(element, "value")?.set;
     const prototype = Object.getPrototypeOf(element);
@@ -1020,20 +1257,45 @@
     el.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
     el.dispatchEvent(new Event("blur", { bubbles: true }));
   }
-  function highlightFilledField(el) {
+  var HIGHLIGHT_STYLES = {
+    success: {
+      outline: "2px solid #10b981",
+      boxShadow: "0 0 0 3px rgba(16, 185, 129, 0.25)"
+    },
+    skipped: {
+      outline: "2px solid #94a3b8",
+      boxShadow: "0 0 0 3px rgba(148, 163, 184, 0.18)"
+    },
+    error: {
+      outline: "2px solid #ef4444",
+      boxShadow: "0 0 0 3px rgba(239, 68, 68, 0.22)"
+    }
+  };
+  function highlightField(el, kind) {
     if (!el.style) return;
-    const originalOutline = el.style.outline;
-    const originalBoxShadow = el.style.boxShadow;
-    const originalTransition = el.style.transition;
+    if (!originalStyleMap.has(el)) {
+      originalStyleMap.set(el, {
+        outline: el.style.outline,
+        boxShadow: el.style.boxShadow,
+        transition: el.style.transition
+      });
+    }
+    const palette = HIGHLIGHT_STYLES[kind];
     el.style.transition = "outline 0.2s ease, box-shadow 0.2s ease";
-    el.style.outline = "2px solid #10b981";
-    el.style.boxShadow = "0 0 0 3px rgba(16, 185, 129, 0.25)";
-    if (typeof setTimeout === "function") {
-      setTimeout(() => {
-        el.style.outline = originalOutline;
-        el.style.boxShadow = originalBoxShadow;
-        el.style.transition = originalTransition;
-      }, 3500);
+    el.style.outline = palette.outline;
+    el.style.boxShadow = palette.boxShadow;
+  }
+  function clearFieldHighlight(el) {
+    if (!el.style) return;
+    const orig = originalStyleMap.get(el);
+    if (orig) {
+      el.style.outline = orig.outline;
+      el.style.boxShadow = orig.boxShadow;
+      el.style.transition = orig.transition;
+      originalStyleMap.delete(el);
+    } else {
+      el.style.outline = "";
+      el.style.boxShadow = "";
     }
   }
   function isFieldEmpty(el) {
@@ -1143,103 +1405,351 @@
     }
   }
   function executeAutofill(profile, options = {}) {
-    const rootNode = options.root ?? (typeof document !== "undefined" ? document : null);
+    const activePlatform = options.platform ?? (typeof location !== "undefined" ? detectJobPlatform(location.href, location.hostname) : "Generic Application");
+    const adapter = getSiteAdapter(activePlatform);
+    const rootNode = options.root ?? (typeof document !== "undefined" ? adapter.getFormRoot?.(document) ?? document : null);
     if (!rootNode || typeof rootNode.querySelectorAll !== "function") {
-      const emptySummary = {
-        detectedFields: 0,
-        filledFields: 0,
-        skippedFields: 0,
-        failedFields: 0
-      };
       return {
         success: false,
         filledCount: 0,
         totalFieldsFound: 0,
         filledFields: [],
-        summary: emptySummary,
+        fields: [],
+        summary: {
+          detectedFields: 0,
+          filledFields: 0,
+          skippedFields: 0,
+          failedFields: 0,
+          manualAttentionFields: 0
+        },
+        canUndo: canUndoAutofill(),
         message: "No document available to scan."
       };
     }
-    const elements = Array.from(
-      rootNode.querySelectorAll(
-        "input, textarea, select"
-      )
-    );
-    const filledFields = [];
-    let detectedCount = 0;
-    let skippedCount = 0;
-    let failedCount = 0;
-    for (const el of elements) {
-      if (typeof el.closest === "function" && el.closest("#applymate-extension-root")) {
-        continue;
-      }
-      if (el.disabled || el.readOnly) {
-        continue;
-      }
-      const classification = classifyFormField(el);
-      if (!classification) continue;
-      detectedCount++;
-      if (classification.confidence < MIN_AUTOFILL_CONFIDENCE || classification.ambiguous) {
-        skippedCount++;
-        continue;
-      }
-      if (!isFieldEmpty(el)) {
-        skippedCount++;
-        continue;
-      }
-      const value = resolveValueForField(classification.type, profile, options);
-      if (!value) {
-        skippedCount++;
-        continue;
-      }
-      const tag = (el.tagName || "").toUpperCase();
-      try {
-        if (tag === "INPUT" || tag === "TEXTAREA") {
-          setNativeValue(el, value);
-          dispatchInputEvents(el);
-          highlightFilledField(el);
-          filledFields.push({
+    if (isAutofillRunning) {
+      return {
+        success: false,
+        filledCount: 0,
+        totalFieldsFound: 0,
+        filledFields: [],
+        fields: lastExecutionResult?.fields ?? [],
+        summary: lastExecutionResult?.summary ?? {
+          detectedFields: 0,
+          filledFields: 0,
+          skippedFields: 0,
+          failedFields: 0,
+          manualAttentionFields: 0
+        },
+        canUndo: canUndoAutofill(),
+        duplicatePrevented: true,
+        message: "Autofill is already in progress."
+      };
+    }
+    if (!options.force && lastAutofilledRoot === rootNode && lastExecutionResult) {
+      return {
+        ...lastExecutionResult,
+        duplicatePrevented: true,
+        canUndo: canUndoAutofill(),
+        message: "Autofill already completed for this form. Use Undo or Rerun Detection to run again."
+      };
+    }
+    isAutofillRunning = true;
+    try {
+      const elements = Array.from(
+        rootNode.querySelectorAll(
+          "input, textarea, select"
+        )
+      );
+      const filledFields = [];
+      const reviewItems = [];
+      const newUndoEntries = [];
+      scannedFieldRegistry.clear();
+      let detectedCount = 0;
+      let skippedCount = 0;
+      let failedCount = 0;
+      let manualAttentionCount = 0;
+      for (const el of elements) {
+        if (typeof el.closest === "function" && el.closest("#applymate-extension-root")) {
+          continue;
+        }
+        if (el.disabled || el.readOnly) {
+          continue;
+        }
+        const classification = classifyFieldForPlatform(el, activePlatform);
+        if (!classification) continue;
+        const fieldId = `am-field-${detectedCount}`;
+        detectedCount++;
+        const tag = (el.tagName || "").toUpperCase();
+        const suggested = resolveValueForField(classification.type, profile, {
+          ...options,
+          allowDefaultPreferences: true
+        }) ?? void 0;
+        if (classification.confidence < MIN_AUTOFILL_CONFIDENCE || classification.ambiguous) {
+          manualAttentionCount++;
+          skippedCount++;
+          highlightField(el, "skipped");
+          const item = {
+            fieldId,
             fieldType: classification.type,
             fieldName: classification.label,
-            valueFilled: value,
-            success: true
-          });
-        } else if (tag === "SELECT") {
-          const selected = selectBestOption(el, value);
-          if (selected) {
+            status: "manual_attention",
+            confidence: classification.confidence,
+            ambiguous: classification.ambiguous,
+            suggestedValue: suggested,
+            reason: classification.ambiguous ? "Ambiguous field \u2014 please review & fill manually" : "Low confidence \u2014 please verify manually"
+          };
+          reviewItems.push(item);
+          scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
+          continue;
+        }
+        if (!isFieldEmpty(el)) {
+          skippedCount++;
+          highlightField(el, "skipped");
+          const currentVal = tag === "SELECT" ? el.options?.[el.selectedIndex]?.text ?? "" : el.value ?? "";
+          const item = {
+            fieldId,
+            fieldType: classification.type,
+            fieldName: classification.label,
+            status: "skipped",
+            confidence: classification.confidence,
+            ambiguous: false,
+            valueFilled: currentVal,
+            suggestedValue: suggested,
+            reason: "Preserved existing value"
+          };
+          reviewItems.push(item);
+          scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
+          continue;
+        }
+        const value = resolveValueForField(classification.type, profile, options);
+        if (!value) {
+          const isPref = classification.type === "expectedSalary" || classification.type === "noticePeriod";
+          if (isPref) manualAttentionCount++;
+          skippedCount++;
+          highlightField(el, "skipped");
+          const item = {
+            fieldId,
+            fieldType: classification.type,
+            fieldName: classification.label,
+            status: isPref ? "manual_attention" : "skipped",
+            confidence: classification.confidence,
+            ambiguous: false,
+            suggestedValue: suggested,
+            reason: isPref ? "Not explicitly configured \u2014 fill manually if needed" : "No saved value in profile"
+          };
+          reviewItems.push(item);
+          scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
+          continue;
+        }
+        const prevValue = tag === "SELECT" ? "" : el.value ?? "";
+        const prevSelectedIndex = tag === "SELECT" ? el.selectedIndex ?? 0 : -1;
+        try {
+          if (tag === "INPUT" || tag === "TEXTAREA") {
+            setNativeValue(el, value);
             dispatchInputEvents(el);
-            highlightFilledField(el);
+            highlightField(el, "success");
+            newUndoEntries.push({ element: el, tag, prevValue, prevSelectedIndex });
             filledFields.push({
               fieldType: classification.type,
               fieldName: classification.label,
               valueFilled: value,
               success: true
             });
+            const item = {
+              fieldId,
+              fieldType: classification.type,
+              fieldName: classification.label,
+              status: "filled",
+              confidence: classification.confidence,
+              ambiguous: false,
+              valueFilled: value,
+              reason: "Autofilled from profile"
+            };
+            reviewItems.push(item);
+            scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
+          } else if (tag === "SELECT") {
+            const selected = selectBestOption(el, value);
+            if (selected) {
+              dispatchInputEvents(el);
+              highlightField(el, "success");
+              newUndoEntries.push({ element: el, tag, prevValue, prevSelectedIndex });
+              filledFields.push({
+                fieldType: classification.type,
+                fieldName: classification.label,
+                valueFilled: value,
+                success: true
+              });
+              const item = {
+                fieldId,
+                fieldType: classification.type,
+                fieldName: classification.label,
+                status: "filled",
+                confidence: classification.confidence,
+                ambiguous: false,
+                valueFilled: value,
+                reason: "Matched dropdown option"
+              };
+              reviewItems.push(item);
+              scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
+            } else {
+              failedCount++;
+              highlightField(el, "error");
+              const item = {
+                fieldId,
+                fieldType: classification.type,
+                fieldName: classification.label,
+                status: "failed",
+                confidence: classification.confidence,
+                ambiguous: false,
+                suggestedValue: value,
+                reason: `No matching option for "${value}"`
+              };
+              reviewItems.push(item);
+              scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
+            }
           } else {
-            failedCount++;
+            skippedCount++;
           }
-        } else {
-          skippedCount++;
+        } catch {
+          failedCount++;
+          highlightField(el, "error");
+          const item = {
+            fieldId,
+            fieldType: classification.type,
+            fieldName: classification.label,
+            status: "failed",
+            confidence: classification.confidence,
+            ambiguous: false,
+            suggestedValue: value,
+            reason: "Failed to write value to element"
+          };
+          reviewItems.push(item);
+          scannedFieldRegistry.set(fieldId, { element: el, classification, reviewItem: item });
         }
+      }
+      if (newUndoEntries.length > 0) {
+        undoStack = newUndoEntries;
+      }
+      const summary = {
+        detectedFields: detectedCount,
+        filledFields: filledFields.length,
+        skippedFields: skippedCount,
+        failedFields: failedCount,
+        manualAttentionFields: manualAttentionCount
+      };
+      const success = filledFields.length > 0;
+      const message = success ? `Autofilled ${filledFields.length} of ${detectedCount} detected field${detectedCount !== 1 ? "s" : ""}.` : detectedCount > 0 ? "No empty matching fields needed autofilling." : "No matching fields could be filled on this page.";
+      const result = {
+        success,
+        filledCount: filledFields.length,
+        totalFieldsFound: detectedCount,
+        filledFields,
+        fields: reviewItems,
+        summary,
+        canUndo: undoStack.length > 0,
+        duplicatePrevented: false,
+        message
+      };
+      lastAutofilledRoot = rootNode;
+      lastExecutionResult = result;
+      return result;
+    } finally {
+      isAutofillRunning = false;
+    }
+  }
+  function fillSingleField(fieldId, profile, customValue) {
+    const entry = scannedFieldRegistry.get(fieldId);
+    if (!entry) {
+      return {
+        success: false,
+        message: "Field is no longer available. Try rerunning detection."
+      };
+    }
+    const { element: el, classification, reviewItem } = entry;
+    const value = customValue !== void 0 && customValue.trim() !== "" ? customValue.trim() : resolveValueForField(classification.type, profile, {
+      allowDefaultPreferences: true
+    });
+    if (!value) {
+      return {
+        success: false,
+        message: `No value available for ${classification.label}.`
+      };
+    }
+    const tag = (el.tagName || "").toUpperCase();
+    const prevValue = tag === "SELECT" ? "" : el.value ?? "";
+    const prevSelectedIndex = tag === "SELECT" ? el.selectedIndex ?? 0 : -1;
+    try {
+      if (tag === "INPUT" || tag === "TEXTAREA") {
+        setNativeValue(el, value);
+        dispatchInputEvents(el);
+        highlightField(el, "success");
+      } else if (tag === "SELECT") {
+        const ok = selectBestOption(el, value);
+        if (!ok) {
+          highlightField(el, "error");
+          return {
+            success: false,
+            message: `No dropdown option matches "${value}".`
+          };
+        }
+        dispatchInputEvents(el);
+        highlightField(el, "success");
+      } else {
+        return { success: false, message: "Unsupported element type." };
+      }
+      undoStack.push({ element: el, tag, prevValue, prevSelectedIndex });
+      const updatedItem = {
+        ...reviewItem,
+        status: "filled",
+        valueFilled: value,
+        reason: "Manually filled via review"
+      };
+      entry.reviewItem = updatedItem;
+      return {
+        success: true,
+        field: updatedItem,
+        message: `Filled ${classification.label}.`
+      };
+    } catch {
+      highlightField(el, "error");
+      return {
+        success: false,
+        message: `Could not fill ${classification.label}.`
+      };
+    }
+  }
+  function undoLastAutofill() {
+    if (undoStack.length === 0) {
+      return {
+        success: false,
+        restoredCount: 0,
+        message: "Nothing to undo."
+      };
+    }
+    let restoredCount = 0;
+    for (const item of undoStack) {
+      try {
+        if (item.tag === "SELECT") {
+          item.element.selectedIndex = item.prevSelectedIndex;
+        } else {
+          setNativeValue(
+            item.element,
+            item.prevValue
+          );
+        }
+        dispatchInputEvents(item.element);
+        clearFieldHighlight(item.element);
+        restoredCount++;
       } catch {
-        failedCount++;
       }
     }
-    const summary = {
-      detectedFields: detectedCount,
-      filledFields: filledFields.length,
-      skippedFields: skippedCount,
-      failedFields: failedCount
-    };
-    const success = filledFields.length > 0;
-    const message = success ? `Successfully autofilled ${filledFields.length} field${filledFields.length > 1 ? "s" : ""}!` : detectedCount > 0 ? "No empty matching fields needed autofilling." : "No matching fields could be filled on this page.";
+    undoStack = [];
+    lastAutofilledRoot = null;
+    lastExecutionResult = null;
     return {
-      success,
-      filledCount: filledFields.length,
-      totalFieldsFound: detectedCount,
-      filledFields,
-      summary,
-      message
+      success: restoredCount > 0,
+      restoredCount,
+      message: `Undid autofill for ${restoredCount} field${restoredCount !== 1 ? "s" : ""}.`
     };
   }
 
@@ -1970,13 +2480,33 @@
   function handleDomChange() {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      const prev = currentFormDetection.detected;
+      const prevDetected = currentFormDetection.detected;
+      const prevFieldsCount = currentFormDetection.fieldsCount;
+      const prevTypesSig = currentFormDetection.classifiedTypes.join(",");
       currentFormDetection = detectApplicationForm();
-      if (prev !== currentFormDetection.detected || !document.getElementById(HOST_ID)) {
+      const nextTypesSig = currentFormDetection.classifiedTypes.join(",");
+      const stepOrFormChanged = prevDetected !== currentFormDetection.detected || prevFieldsCount !== currentFormDetection.fieldsCount || prevTypesSig !== nextTypesSig;
+      if (stepOrFormChanged) {
+        resetAutofillState();
+      }
+      if (stepOrFormChanged || !document.getElementById(HOST_ID)) {
         initApplyMate();
       }
     }, 350);
   }
+  document.addEventListener(
+    "click",
+    (e) => {
+      const target = e.target;
+      const btn = target?.closest?.("button, [role='button'], input[type='button']");
+      if (!btn || btn.closest("#applymate-extension-root")) return;
+      const label = (btn.textContent || btn.getAttribute("aria-label") || btn.value || "").toLowerCase().trim();
+      if (/\b(next|continue|save\s*and\s*continue|proceed|review)\b/.test(label)) {
+        setTimeout(handleDomChange, 450);
+      }
+    },
+    { capture: true }
+  );
   window.addEventListener("popstate", handleDomChange);
   window.addEventListener("hashchange", handleDomChange);
   var observer = new MutationObserver(handleDomChange);
@@ -1989,6 +2519,40 @@
       if (message.type === "PAGE_INFO_REQ") {
         sendResponse({ type: "PAGE_INFO_RES", payload: getPageSnapshot() });
         return false;
+      }
+      if (message.type === "RERUN_DETECTION") {
+        resetAutofillState();
+        const snapshot = getPageSnapshot();
+        reportToBackground();
+        sendResponse({ type: "PAGE_INFO_RES", payload: snapshot });
+        return false;
+      }
+      if (message.type === "UNDO_AUTOFILL") {
+        const undoRes = undoLastAutofill();
+        const response = {
+          type: "UNDO_AUTOFILL_RES",
+          payload: undoRes
+        };
+        sendResponse(response);
+        return false;
+      }
+      if (message.type === "FILL_SINGLE_FIELD") {
+        const payload = message.payload;
+        (async () => {
+          let profile = null;
+          try {
+            const res = await ext.runtime.sendMessage({ type: "GET_PROFILE" });
+            if (res?.type === "GET_PROFILE_RES" && res.payload) profile = res.payload;
+          } catch {
+          }
+          const result = payload ? fillSingleField(payload.fieldId, profile ?? DEFAULT_PROFILE, payload.customValue) : { success: false, message: "Missing fieldId." };
+          const response = {
+            type: "FILL_SINGLE_FIELD_RES",
+            payload: result
+          };
+          sendResponse(response);
+        })();
+        return true;
       }
       if (message.type === "TRIGGER_AUTOFILL") {
         triggerAutofill().then((res) => {

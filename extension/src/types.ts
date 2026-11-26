@@ -15,6 +15,11 @@ export type MessageType =
   | "GET_PROFILE_RES"     // background → content/popup: candidate profile response
   | "TRIGGER_AUTOFILL"    // popup → content: trigger autofill in active tab
   | "AUTOFILL_RES"        // content → popup: autofill execution result
+  | "UNDO_AUTOFILL"       // popup → content: undo most recent autofill
+  | "UNDO_AUTOFILL_RES"   // content → popup: undo result
+  | "FILL_SINGLE_FIELD"   // popup → content: manually fill a single detected field
+  | "FILL_SINGLE_FIELD_RES" // content → popup: single field fill result
+  | "RERUN_DETECTION"     // popup → content: re-scan DOM for form fields
   | "PING"                // health check
   | "PONG";               // health check response
 
@@ -25,6 +30,7 @@ export type JobPlatform =
   | "Ashby"
   | "LinkedIn"
   | "Indeed"
+  | "Naukri"
   | "SmartRecruiters"
   | "Generic Application"
   | "None";
@@ -124,11 +130,26 @@ export interface AutofillFieldResult {
   success: boolean;
 }
 
+export type FieldReviewStatus = "filled" | "skipped" | "failed" | "manual_attention";
+
+export interface FieldReviewItem {
+  fieldId: string;
+  fieldType: SemanticFieldType;
+  fieldName: string;
+  status: FieldReviewStatus;
+  confidence: number;
+  ambiguous: boolean;
+  valueFilled?: string;
+  suggestedValue?: string;
+  reason: string;
+}
+
 export interface AutofillSummary {
   detectedFields: number;
   filledFields: number;
   skippedFields: number;
   failedFields: number;
+  manualAttentionFields?: number;
 }
 
 export interface AutofillExecutionResult {
@@ -136,7 +157,27 @@ export interface AutofillExecutionResult {
   filledCount: number;
   totalFieldsFound: number;
   filledFields: AutofillFieldResult[];
+  fields?: FieldReviewItem[];
   summary: AutofillSummary;
+  canUndo?: boolean;
+  duplicatePrevented?: boolean;
+  message: string;
+}
+
+export interface UndoAutofillResult {
+  success: boolean;
+  restoredCount: number;
+  message: string;
+}
+
+export interface FillSingleFieldPayload {
+  fieldId: string;
+  customValue?: string;
+}
+
+export interface FillSingleFieldResult {
+  success: boolean;
+  field?: FieldReviewItem;
   message: string;
 }
 
@@ -160,6 +201,11 @@ export type GetProfileMessage = Message<"GET_PROFILE">;
 export type GetProfileResMessage = Message<"GET_PROFILE_RES", CandidateProfile>;
 export type TriggerAutofillMessage = Message<"TRIGGER_AUTOFILL">;
 export type AutofillResMessage = Message<"AUTOFILL_RES", AutofillExecutionResult>;
+export type UndoAutofillMessage = Message<"UNDO_AUTOFILL">;
+export type UndoAutofillResMessage = Message<"UNDO_AUTOFILL_RES", UndoAutofillResult>;
+export type FillSingleFieldMessage = Message<"FILL_SINGLE_FIELD", FillSingleFieldPayload>;
+export type FillSingleFieldResMessage = Message<"FILL_SINGLE_FIELD_RES", FillSingleFieldResult>;
+export type RerunDetectionMessage = Message<"RERUN_DETECTION">;
 export type PingMessage = Message<"PING">;
 export type PongMessage = Message<"PONG", { version: string }>;
 
@@ -171,5 +217,10 @@ export type AnyMessage =
   | GetProfileResMessage
   | TriggerAutofillMessage
   | AutofillResMessage
+  | UndoAutofillMessage
+  | UndoAutofillResMessage
+  | FillSingleFieldMessage
+  | FillSingleFieldResMessage
+  | RerunDetectionMessage
   | PingMessage
   | PongMessage;
