@@ -1,22 +1,70 @@
 /**
- * ApplyMate — Autofill Execution Engine
+ * ApplyMate — Reusable One-Click Autofill Engine
  *
- * Scans the active DOM, classifies each input/select/textarea against candidate
- * profile data, and fills matching fields with native prototype setter bypasses
- * and reactive DOM events so React, Angular, Vue, and vanilla forms accept the values.
+ * Connects the Form Detection Engine (`fieldClassifier.ts`) with the candidate's
+ * saved profile (`browser.storage.local` / `DEFAULT_PROFILE`).
+ *
+ * Guarantees & Safety Guards:
+ *  - Fills ONLY empty fields (preserves existing user-entered values).
+ *  - Skips low-confidence (< 0.70) and ambiguous fields.
+ *  - Never fills salary or notice period unless explicitly configured.
+ *  - Never fills demographic fields (handled by classifier + double-guarded here).
+ *  - Never clicks submit/application buttons or bypasses website validation.
+ *  - Uses native prototype value setter + input/change events for React/Vue/Angular.
  */
 
 import type { CandidateProfile } from "../../src/types/profile.ts";
+import { DEFAULT_PROFILE } from "../../src/lib/profile/defaultProfile.ts";
 import type {
   SemanticFieldType,
   AutofillFieldResult,
   AutofillExecutionResult,
+  AutofillSummary,
 } from "../src/types.ts";
 import { classifyFormField } from "./fieldClassifier.ts";
 
+export const PROFILE_STORAGE_KEY = "applymate_profile";
+export const MIN_AUTOFILL_CONFIDENCE = 0.70;
+
+const DEFAULT_UNCONFIGURED_NOTICE = "Available immediately / 2 weeks";
+const DEFAULT_UNCONFIGURED_SALARY = "Competitive";
+
+export interface AutofillOptions {
+  /** Override root DOM node to scan (defaults to `document`) */
+  root?: Document | HTMLElement;
+  /** Allow filling default noticePeriod/desiredSalary placeholders (default: false) */
+  allowDefaultPreferences?: boolean;
+}
+
 /**
- * Sets native value using element prototype descriptor to ensure modern
- * virtual DOM frameworks (React 18/19, Vue, Angular, Formik) trigger their internal state setters.
+ * Loads the candidate's saved profile from extension storage (`browser.storage.local`
+ * or `chrome.storage.local`), falling back to `DEFAULT_PROFILE`.
+ */
+export async function loadSavedProfile(): Promise<CandidateProfile> {
+  try {
+    const ext =
+      typeof browser !== "undefined"
+        ? browser
+        : typeof chrome !== "undefined"
+          ? chrome
+          : null;
+
+    if (ext?.storage?.local) {
+      const data = await ext.storage.local.get(PROFILE_STORAGE_KEY);
+      const saved = data?.[PROFILE_STORAGE_KEY] as CandidateProfile | undefined;
+      if (saved && saved.personal && saved.personal.email) {
+        return saved;
+      }
+    }
+  } catch {
+    // Fallback to DEFAULT_PROFILE if storage is unavailable
+  }
+  return DEFAULT_PROFILE;
+}
+
+/**
+ * Sets native value using element prototype descriptor so React 18/19, Vue,
+ * Angular, and Formik controlled inputs detect the programmatic change.
  */
 export function setNativeValue(
   element: HTMLInputElement | HTMLTextAreaElement,
@@ -24,7 +72,9 @@ export function setNativeValue(
 ): void {
   const valueSetter = Object.getOwnPropertyDescriptor(element, "value")?.set;
   const prototype = Object.getPrototypeOf(element);
-  const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+  const prototypeValueSetter = prototype
+    ? Object.getOwnPropertyDescriptor(prototype, "value")?.set
+    : undefined;
 
   if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
     prototypeValueSetter.call(element, value);
@@ -38,11 +88,20 @@ export function setNativeValue(
 export interface SelectOptionLike {
   text: string;
   value: string;
+  disabled?: boolean;
 }
 
 export interface SelectElementLike {
   options: ArrayLike<SelectOptionLike>;
   selectedIndex?: number;
+}
+
+function isPlaceholderOption(opt: SelectOptionLike | undefined): boolean {
+  if (!opt) return true;
+  const val = (opt.value ?? "").trim();
+  const text = (opt.text ?? "").toLowerCase().trim();
+  if (val === "") return true;
+  return /^(select|choose|pick|--|please\s+select)/.test(text);
 }
 
 /**
@@ -53,11 +112,14 @@ export function selectBestOption(
   targetValue: string
 ): boolean {
   const lowerTarget = targetValue.toLowerCase().trim();
+  if (!lowerTarget) return false;
+
   const options = Array.from(selectEl.options);
 
   // 1. Exact match on option text or value
   for (let i = 0; i < options.length; i++) {
     const opt = options[i];
+    if (opt.disabled) continue;
     const text = opt.text.toLowerCase().trim();
     const val = opt.value.toLowerCase().trim();
     if (text === lowerTarget || val === lowerTarget) {
@@ -66,13 +128,57 @@ export function selectBestOption(
     }
   }
 
-  // 2. Substring / keyword match (e.g. matching "Fresher" or "1" or "India")
+  // 2. "Fresher" normalisation — if target is "fresher" or "0"
+  if (lowerTarget === "fresher" || lowerTarget === "0") {
+    for (let i = 0; i < options.length; i++) {
+      const opt = options[i];
+      if (opt.disabled) continue;
+      const text = opt.text.toLowerCase().trim();
+      if (
+        text.includes("fresher") ||
+        text.includes("0-1") ||
+        text.includes("less than 1") ||
+        text.includes("no experience")
+      ) {
+        selectEl.selectedIndex = i;
+        return true;
+      }
+    }
+  }
+
+  // 3. Numeric year matching — e.g. target "2" matches "1-2 years", "2 years"
+  const numMatch = lowerTarget.match(/^(\d+)$/);
+  if (numMatch) {
+    const targetNum = parseInt(numMatch[1], 10);
+    for (let i = 0; i < options.length; i++) {
+      const opt = options[i];
+      if (opt.disabled) continue;
+      const text = opt.text.toLowerCase().trim();
+      const rangeMatch = text.match(/(\d+)\s*[-–]\s*(\d+)/);
+      if (rangeMatch) {
+        const lo = parseInt(rangeMatch[1], 10);
+        const hi = parseInt(rangeMatch[2], 10);
+        if (targetNum >= lo && targetNum <= hi) {
+          selectEl.selectedIndex = i;
+          return true;
+        }
+      }
+      const singleMatch = text.match(/^(\d+)\s*(years?|yrs?|\+)/);
+      if (singleMatch && parseInt(singleMatch[1], 10) === targetNum) {
+        selectEl.selectedIndex = i;
+        return true;
+      }
+    }
+  }
+
+  // 4. Substring / keyword match (bidirectional, skipping empty placeholder options)
   for (let i = 0; i < options.length; i++) {
     const opt = options[i];
+    if (opt.disabled || isPlaceholderOption(opt)) continue;
     const text = opt.text.toLowerCase().trim();
     const val = opt.value.toLowerCase().trim();
     if (
-      (lowerTarget && (text.includes(lowerTarget) || lowerTarget.includes(text))) ||
+      (text && (text.includes(lowerTarget) || lowerTarget.includes(text))) ||
       (val && (val.includes(lowerTarget) || lowerTarget.includes(val)))
     ) {
       selectEl.selectedIndex = i;
@@ -84,9 +190,11 @@ export function selectBestOption(
 }
 
 /**
- * Dispatches the complete sequence of browser events to trigger form validation.
+ * Dispatches focus, input, change, and blur events so frameworks and native
+ * validation respond naturally without bypassing form validation.
  */
 export function dispatchInputEvents(el: HTMLElement): void {
+  if (typeof el.dispatchEvent !== "function" || typeof Event === "undefined") return;
   el.dispatchEvent(new Event("focus", { bubbles: true }));
   el.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
   el.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
@@ -94,9 +202,10 @@ export function dispatchInputEvents(el: HTMLElement): void {
 }
 
 /**
- * Visual highlight indicator that glows emerald when an input is filled.
+ * Visually highlights a successfully autofilled field with an emerald outline.
  */
 export function highlightFilledField(el: HTMLElement): void {
+  if (!el.style) return;
   const originalOutline = el.style.outline;
   const originalBoxShadow = el.style.boxShadow;
   const originalTransition = el.style.transition;
@@ -105,35 +214,61 @@ export function highlightFilledField(el: HTMLElement): void {
   el.style.outline = "2px solid #10b981";
   el.style.boxShadow = "0 0 0 3px rgba(16, 185, 129, 0.25)";
 
-  setTimeout(() => {
-    el.style.outline = originalOutline;
-    el.style.boxShadow = originalBoxShadow;
-    el.style.transition = originalTransition;
-  }, 3500);
+  if (typeof setTimeout === "function") {
+    setTimeout(() => {
+      el.style.outline = originalOutline;
+      el.style.boxShadow = originalBoxShadow;
+      el.style.transition = originalTransition;
+    }, 3500);
+  }
 }
 
 /**
- * Resolves the candidate profile data for a specific semantic field.
+ * Checks whether a form control is empty and eligible to be filled.
+ * Preserves any existing user-entered value.
+ */
+export function isFieldEmpty(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+): boolean {
+  const tag = (el.tagName || "").toUpperCase();
+  if (tag === "SELECT") {
+    const selectEl = el as HTMLSelectElement;
+    const idx = selectEl.selectedIndex ?? -1;
+    if (idx < 0) return true;
+    const currentOpt = selectEl.options?.[idx];
+    return isPlaceholderOption(currentOpt);
+  }
+  const val = (el as HTMLInputElement | HTMLTextAreaElement).value ?? "";
+  return val.trim().length === 0;
+}
+
+/**
+ * Resolves the candidate profile value for a semantic field type.
+ * Enforces safety rule: never returns salary or notice period unless
+ * explicitly configured by the user.
  */
 export function resolveValueForField(
   type: SemanticFieldType,
-  profile: CandidateProfile
+  profile: CandidateProfile,
+  options: AutofillOptions = {}
 ): string | null {
   const { personal, social, experience, education, preferences, skills } = profile;
 
   switch (type) {
     case "fullName":
-      return `${personal.firstName} ${personal.lastName}`.trim();
+      return `${personal.firstName} ${personal.lastName}`.trim() || null;
     case "firstName":
-      return personal.firstName;
+      return personal.firstName || null;
     case "lastName":
-      return personal.lastName;
+      return personal.lastName || null;
     case "email":
-      return personal.email;
+      return personal.email || null;
     case "phone":
-      return personal.phone;
+      return personal.phone || null;
+    case "location":
+      return personal.location || null;
     case "city": {
-      // E.g. "Delhi, India" -> "Delhi" or full string
+      if (!personal.location) return null;
       if (personal.location.includes(",")) {
         return personal.location.split(",")[0].trim();
       }
@@ -145,133 +280,216 @@ export function resolveValueForField(
       return "India";
     case "postalCode":
       return "110001";
+    case "currentCompany": {
+      const currentJob = experience.find((e) => e.current) ?? experience[0];
+      return currentJob?.company || null;
+    }
+    case "previousCompany": {
+      const prevJob = experience.find((e) => !e.current) ?? experience[1];
+      return prevJob?.company || null;
+    }
     case "currentTitle":
-      return personal.professionalTitle;
+      return personal.professionalTitle || null;
     case "experience": {
-      // Calculate from experience history or return latest duration
-      if (experience.length > 0) {
-        return `${experience.length} Year${experience.length > 1 ? "s" : ""}`;
-      }
-      return "1 Year";
+      const totalMonths = experience.reduce((acc, job) => {
+        if (!job.startDate) return acc;
+        const start = new Date(job.startDate);
+        const end = job.endDate ? new Date(job.endDate) : new Date();
+        const diff =
+          (end.getFullYear() - start.getFullYear()) * 12 +
+          (end.getMonth() - start.getMonth());
+        return acc + Math.max(0, diff);
+      }, 0);
+      const totalYears = Math.round(totalMonths / 12);
+      if (totalYears === 0) return "Fresher";
+      if (totalYears === 1) return "1";
+      if (totalYears <= 2) return "2";
+      if (totalYears <= 3) return "3";
+      if (totalYears <= 5) return "5";
+      return String(totalYears);
     }
     case "resumeLink":
-      // If the form asks for link to CV (e.g. Credit Samadhaan "Link to your CV (Google Drive, LinkedIn")
-      return social.linkedin || social.portfolio || "https://linkedin.com/in/naitik";
+      return social.linkedin || social.portfolio || null;
     case "linkedin":
-      return social.linkedin;
+      return social.linkedin || null;
     case "github":
-      return social.github;
+      return social.github || null;
     case "portfolio":
-      return social.portfolio;
+      return social.portfolio || null;
     case "bio":
-      return personal.bio;
+      return personal.bio || null;
     case "skills":
-      return skills.join(", ");
+      return skills.length > 0 ? skills.join(", ") : null;
     case "educationDegree":
-      return education[0]?.degree ?? "B.Tech";
+      return education[0]?.degree || null;
     case "educationSchool":
-      return education[0]?.institution ?? "Bikaner Technical University";
+      return education[0]?.institution || null;
     case "educationGradYear":
-      return education[0]?.endDate ? education[0].endDate.slice(0, 4) : "2025";
+      return education[0]?.endDate ? education[0].endDate.slice(0, 4) : null;
     case "workAuth":
-      return preferences.workAuthorization;
-    case "noticePeriod":
-      return preferences.noticePeriod;
-    case "expectedSalary":
-      return preferences.desiredSalary;
+      return preferences.workAuthorization || null;
+    case "noticePeriod": {
+      const val = (preferences.noticePeriod ?? "").trim();
+      if (!val) return null;
+      if (!options.allowDefaultPreferences && val === DEFAULT_UNCONFIGURED_NOTICE) {
+        return null;
+      }
+      return val;
+    }
+    case "expectedSalary": {
+      const val = (preferences.desiredSalary ?? "").trim();
+      if (!val) return null;
+      if (!options.allowDefaultPreferences && val === DEFAULT_UNCONFIGURED_SALARY) {
+        return null;
+      }
+      return val;
+    }
     default:
       return null;
   }
 }
 
 /**
- * Executes autofill across all classified form controls in document.
+ * Executes one-click autofill across all detected form controls in `root`
+ * (defaults to `document`) using the provided `CandidateProfile`.
  */
-export function executeAutofill(profile: CandidateProfile): AutofillExecutionResult {
+export function executeAutofill(
+  profile: CandidateProfile,
+  options: AutofillOptions = {}
+): AutofillExecutionResult {
+  const rootNode =
+    options.root ?? (typeof document !== "undefined" ? document : null);
+
+  if (!rootNode || typeof rootNode.querySelectorAll !== "function") {
+    const emptySummary: AutofillSummary = {
+      detectedFields: 0,
+      filledFields: 0,
+      skippedFields: 0,
+      failedFields: 0,
+    };
+    return {
+      success: false,
+      filledCount: 0,
+      totalFieldsFound: 0,
+      filledFields: [],
+      summary: emptySummary,
+      message: "No document available to scan.",
+    };
+  }
+
   const elements = Array.from(
-    document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+    rootNode.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
       "input, textarea, select"
     )
   );
 
   const filledFields: AutofillFieldResult[] = [];
-  let totalCandidates = 0;
+  let detectedCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
 
   for (const el of elements) {
-    // Skip hidden, disabled, or extension's own elements
-    if (
-      el.type === "hidden" ||
-      el.type === "submit" ||
-      el.type === "button" ||
-      el.type === "reset" ||
-      el.type === "file" ||
-      el.disabled ||
-      el.closest("#applymate-extension-root")
-    ) {
+    // Never touch ApplyMate's own Shadow DOM UI or disabled/readOnly controls
+    if (typeof el.closest === "function" && el.closest("#applymate-extension-root")) {
+      continue;
+    }
+    if (el.disabled || (el as HTMLInputElement).readOnly) {
       continue;
     }
 
     const classification = classifyFormField(el);
     if (!classification) continue;
 
-    totalCandidates++;
-    const value = resolveValueForField(classification.type, profile);
-    if (!value) continue;
+    detectedCount++;
 
-    let wasFilled = false;
+    // Safety guard 1: Skip low-confidence or ambiguous fields
+    if (
+      classification.confidence < MIN_AUTOFILL_CONFIDENCE ||
+      classification.ambiguous
+    ) {
+      skippedCount++;
+      continue;
+    }
 
-    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-      setNativeValue(el, value);
-      dispatchInputEvents(el);
-      highlightFilledField(el);
-      wasFilled = true;
-    } else if (el instanceof HTMLSelectElement) {
-      const selected = selectBestOption(el, value);
-      if (selected) {
+    // Safety guard 2: Preserve existing user-entered values (fill only empty fields)
+    if (!isFieldEmpty(el)) {
+      skippedCount++;
+      continue;
+    }
+
+    // Safety guard 3: Resolve profile value (respects explicit salary/notice rules)
+    const value = resolveValueForField(classification.type, profile, options);
+    if (!value) {
+      skippedCount++;
+      continue;
+    }
+
+    const tag = (el.tagName || "").toUpperCase();
+
+    try {
+      if (tag === "INPUT" || tag === "TEXTAREA") {
+        setNativeValue(el as HTMLInputElement | HTMLTextAreaElement, value);
         dispatchInputEvents(el);
         highlightFilledField(el);
-        wasFilled = true;
+        filledFields.push({
+          fieldType: classification.type,
+          fieldName: classification.label,
+          valueFilled: value,
+          success: true,
+        });
+      } else if (tag === "SELECT") {
+        const selected = selectBestOption(el as HTMLSelectElement, value);
+        if (selected) {
+          dispatchInputEvents(el);
+          highlightFilledField(el);
+          filledFields.push({
+            fieldType: classification.type,
+            fieldName: classification.label,
+            valueFilled: value,
+            success: true,
+          });
+        } else {
+          failedCount++;
+        }
+      } else {
+        skippedCount++;
       }
-    }
-
-    if (wasFilled) {
-      filledFields.push({
-        fieldType: classification.type,
-        fieldName: classification.label,
-        valueFilled: value,
-        success: true,
-      });
+    } catch {
+      failedCount++;
     }
   }
 
-  // Also check consent/terms checkbox if present and not already checked
-  const checkboxes = Array.from(document.querySelectorAll<HTMLInputElement>("input[type='checkbox']"));
-  for (const cb of checkboxes) {
-    if (cb.disabled || cb.checked || cb.closest("#applymate-extension-root")) continue;
-    const parentText = (cb.closest("label")?.textContent || cb.parentElement?.textContent || "").toLowerCase();
-    if (
-      parentText.includes("agree") ||
-      parentText.includes("consent") ||
-      parentText.includes("contact") ||
-      parentText.includes("terms") ||
-      parentText.includes("privacy")
-    ) {
-      cb.checked = true;
-      cb.dispatchEvent(new Event("change", { bubbles: true }));
-      highlightFilledField(cb);
-    }
-  }
+  const summary: AutofillSummary = {
+    detectedFields: detectedCount,
+    filledFields: filledFields.length,
+    skippedFields: skippedCount,
+    failedFields: failedCount,
+  };
 
   const success = filledFields.length > 0;
   const message = success
     ? `Successfully autofilled ${filledFields.length} field${filledFields.length > 1 ? "s" : ""}!`
-    : "No matching fields could be filled on this page.";
+    : detectedCount > 0
+      ? "No empty matching fields needed autofilling."
+      : "No matching fields could be filled on this page.";
 
   return {
     success,
     filledCount: filledFields.length,
-    totalFieldsFound: totalCandidates,
+    totalFieldsFound: detectedCount,
     filledFields,
+    summary,
     message,
   };
+}
+
+/**
+ * One-click autofill entry point: retrieves the saved profile from storage
+ * (or falls back to DEFAULT_PROFILE) and executes autofill on the page.
+ */
+export async function runAutofill(
+  options: AutofillOptions & { profile?: CandidateProfile } = {}
+): Promise<AutofillExecutionResult> {
+  const profile = options.profile ?? (await loadSavedProfile());
+  return executeAutofill(profile, options);
 }

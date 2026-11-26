@@ -58,6 +58,26 @@ const PLATFORM_PATTERNS: Array<{ platform: JobPlatform; match: (url: string, hos
       host.includes("smartrecruiters.com") ||
       Boolean(typeof document !== "undefined" && document.querySelector("form[action*='smartrecruiters']")),
   },
+  // ── Indian job portals & career sites ───────────────────────────────────
+  {
+    platform: "Generic Application",
+    match: (url, host) =>
+      host.includes("creditsamadhaan.com") ||
+      host.includes("naukri.com") ||
+      host.includes("internshala.com") ||
+      host.includes("unstop.com") ||
+      host.includes("cutshort.io") ||
+      host.includes("hirist.tech") ||
+      host.includes("foundit.in") ||
+      host.includes("apna.co") ||
+      (host.includes("angellist.com") || host.includes("wellfound.com")) ||
+      Boolean(
+        typeof document !== "undefined" &&
+          document.querySelector(
+            "form[action*='/apply'], form[action*='/careers'], form[action*='/jobs']"
+          )
+      ),
+  },
 ];
 
 /**

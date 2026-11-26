@@ -1,303 +1,861 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ApplyMate</title>
-    <style>
-      /* ── Reset & base ─────────────────────────────────── */
-      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ApplyMate</title>
+  <style>
+    /* ── Reset ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-      :root {
-        --blue:   #2563eb;
-        --blue-d: #1d4ed8;
-        --green:  #10b981;
-        --amber:  #f59e0b;
-        --red:    #ef4444;
-        --fg:     #111827;
-        --fg-2:   #6b7280;
-        --fg-3:   #9ca3af;
-        --bg:     #ffffff;
-        --bg-2:   #f9fafb;
-        --border: #e5e7eb;
-        --radius: 12px;
-      }
+    :root {
+      --blue:     #2563eb;
+      --blue-d:   #1d4ed8;
+      --blue-l:   #eff6ff;
+      --blue-m:   #bfdbfe;
+      --green:    #10b981;
+      --green-l:  #ecfdf5;
+      --green-m:  #a7f3d0;
+      --green-d:  #047857;
+      --amber:    #f59e0b;
+      --red:      #ef4444;
+      --fg:       #0f172a;
+      --fg-2:     #334155;
+      --fg-3:     #64748b;
+      --fg-4:     #94a3b8;
+      --bg:       #ffffff;
+      --bg-2:     #f8fafc;
+      --bg-3:     #f1f5f9;
+      --border:   #e2e8f0;
+      --border-2: #cbd5e1;
+      --radius:   12px;
+      --shadow:   0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    }
 
-      body {
-        width: 320px;
-        background: var(--bg);
-        color: var(--fg);
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
-                     "Segoe UI", Roboto, sans-serif;
-        font-size: 13px;
-        line-height: 1.5;
-      }
+    body {
+      width: 340px;
+      min-height: 500px;
+      max-height: 580px;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
 
-      /* ── Header ───────────────────────────────────────── */
-      .header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 14px 16px 12px;
-        border-bottom: 1px solid var(--border);
-      }
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-      }
-      .brand-icon {
-        width: 32px;
-        height: 32px;
-        border-radius: 9px;
-        background: var(--blue);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #fff;
-        flex-shrink: 0;
-      }
-      .brand-name {
-        font-weight: 700;
-        font-size: 15px;
-        letter-spacing: -0.02em;
-        color: var(--fg);
-      }
-      .brand-sub {
-        font-size: 10px;
-        color: var(--fg-3);
-        margin-top: -2px;
-      }
-      #version {
-        font-size: 11px;
-        font-weight: 500;
-        color: var(--fg-3);
-        background: var(--bg-2);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 2px 7px;
-      }
+    /* ── Scroll container ────────────────────────────── */
+    .popup-scroll {
+      height: 580px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
 
-      /* ── Status bar ───────────────────────────────────── */
-      .status-bar {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        padding: 10px 16px;
-        background: var(--bg-2);
-        border-bottom: 1px solid var(--border);
-      }
-      .status-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        flex-shrink: 0;
-        background: var(--fg-3);
-        transition: background 0.2s;
-      }
-      .status-dot.ready   { background: var(--green); }
-      .status-dot.loading { background: var(--amber); animation: pulse 1s infinite; }
-      .status-dot.error   { background: var(--red); }
-      @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50%       { opacity: 0.4; }
-      }
-      #status-label {
-        font-size: 11px;
-        font-weight: 500;
-        color: var(--fg-2);
-      }
+    .popup-scroll::-webkit-scrollbar { width: 4px; }
+    .popup-scroll::-webkit-scrollbar-track { background: transparent; }
+    .popup-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-      /* ── Page info card ───────────────────────────────── */
-      .section {
-        padding: 14px 16px;
-      }
-      .section-label {
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--fg-3);
-        margin-bottom: 10px;
-      }
-      .info-card {
-        background: var(--bg-2);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        overflow: hidden;
-      }
-      .info-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-        padding: 10px 12px;
-      }
-      .info-row + .info-row {
-        border-top: 1px solid var(--border);
-      }
-      .info-icon {
-        margin-top: 1px;
-        flex-shrink: 0;
-        color: var(--fg-3);
-      }
-      .info-col {
-        display: flex;
-        flex-direction: column;
-        min-width: 0;
-      }
-      .info-key {
-        font-size: 10px;
-        font-weight: 600;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: var(--fg-3);
-        margin-bottom: 2px;
-      }
-      .info-val {
-        font-size: 12px;
-        color: var(--fg);
-        word-break: break-all;
-        font-weight: 500;
-      }
-      #page-url {
-        color: var(--blue);
-        word-break: break-all;
-        font-size: 11px;
-      }
+    /* ── Header ─────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      flex-shrink: 0;
+    }
 
-      /* ── Footer ───────────────────────────────────────── */
-      .footer {
-        padding: 12px 16px;
-        border-top: 1px solid var(--border);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-      }
-      button {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        font-family: inherit;
-        font-size: 12px;
-        font-weight: 600;
-        padding: 7px 12px;
-        border-radius: 8px;
-        border: none;
-        cursor: pointer;
-        transition: background 0.15s;
-      }
-      .btn-primary {
-        background: var(--blue);
-        color: #fff;
-      }
-      .btn-primary:hover { background: var(--blue-d); }
-      .btn-ghost {
-        background: var(--bg-2);
-        color: var(--fg-2);
-        border: 1px solid var(--border);
-      }
-      .btn-ghost:hover { background: var(--border); }
-    </style>
-  </head>
-  <body>
-    <!-- Header -->
-    <div class="header">
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+    }
+
+    .brand-name {
+      font-weight: 800;
+      font-size: 15px;
+      letter-spacing: -0.03em;
+      color: var(--fg);
+    }
+
+    .brand-tagline {
+      font-size: 10px;
+      color: var(--fg-4);
+      margin-top: -2px;
+      font-weight: 500;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .version-badge {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--fg-4);
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 7px;
+    }
+
+    /* ── Status pill ─────────────────────────────────── */
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px 4px 8px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--fg-3);
+      flex-shrink: 0;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--fg-4);
+      transition: background 0.25s;
+      flex-shrink: 0;
+    }
+    .status-dot.active  { background: var(--green); box-shadow: 0 0 0 2px rgba(16,185,129,0.2); }
+    .status-dot.loading { background: var(--amber); animation: pulse 1.1s infinite; }
+    .status-dot.error   { background: var(--red); }
+
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.35; } }
+
+    /* ── Profile card ───────────────────────────────── */
+    .profile-card {
+      margin: 14px 14px 0;
+      background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #3b82f6 100%);
+      border-radius: 14px;
+      padding: 16px;
+      color: #fff;
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .profile-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") repeat;
+      opacity: 0.6;
+    }
+
+    .profile-loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .profile-avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 800;
+      border: 2px solid rgba(255,255,255,0.35);
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .profile-info {
+      flex: 1;
+      min-width: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .profile-name {
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .profile-title {
+      font-size: 10.5px;
+      opacity: 0.82;
+      margin-top: 2px;
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .profile-completion {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .completion-bar-wrap {
+      flex: 1;
+      height: 5px;
+      background: rgba(255,255,255,0.22);
+      border-radius: 9999px;
+      overflow: hidden;
+    }
+
+    .completion-bar {
+      height: 100%;
+      background: #fff;
+      border-radius: 9999px;
+      transition: width 0.6s ease;
+    }
+
+    .completion-pct {
+      font-size: 11px;
+      font-weight: 700;
+      opacity: 0.95;
+      flex-shrink: 0;
+    }
+
+    /* ── Quick actions ───────────────────────────────── */
+    .section {
+      padding: 14px 14px 0;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--fg-4);
+      margin-bottom: 8px;
+    }
+
+    .quick-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+    }
+
+    .action-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      padding: 10px 11px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--fg-2);
+      text-align: left;
+      text-decoration: none;
+      transition: background 0.14s, border-color 0.14s, transform 0.1s;
+    }
+
+    .action-btn:hover {
+      background: var(--bg-3);
+      border-color: var(--border-2);
+    }
+
+    .action-btn:active {
+      transform: scale(0.97);
+    }
+
+    .action-btn.primary {
+      background: var(--blue-l);
+      border-color: var(--blue-m);
+      color: var(--blue);
+    }
+
+    .action-btn.primary:hover {
+      background: #dbeafe;
+      border-color: var(--blue);
+    }
+
+    .action-btn.primary.filling {
+      background: var(--blue);
+      color: #fff;
+      border-color: var(--blue-d);
+    }
+
+    .action-btn.primary.filled {
+      background: var(--green-l);
+      color: var(--green-d);
+      border-color: var(--green-m);
+    }
+
+    .action-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .action-btn.primary .action-icon {
+      background: var(--blue-m);
+    }
+
+    .action-btn.primary.filling .action-icon,
+    .action-btn.primary.filled .action-icon {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .action-label {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .action-title {
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .action-sub {
+      display: block;
+      font-size: 10px;
+      font-weight: 400;
+      color: var(--fg-4);
+      margin-top: 1px;
+    }
+
+    .action-btn.primary .action-sub { color: #60a5fa; }
+    .action-btn.primary.filling .action-sub,
+    .action-btn.primary.filled .action-sub { color: rgba(255,255,255,0.65); }
+
+    /* ── Website status ──────────────────────────────── */
+    .site-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .site-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 9px 12px;
+    }
+
+    .site-row + .site-row {
+      border-top: 1px solid var(--border);
+    }
+
+    .site-icon {
+      margin-top: 1px;
+      flex-shrink: 0;
+      color: var(--fg-4);
+    }
+
+    .site-col {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .site-key {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--fg-4);
+    }
+
+    .site-val {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--fg);
+      margin-top: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .site-val.url { color: var(--blue); font-size: 11px; }
+    .site-val.muted { color: var(--fg-3); font-style: italic; }
+
+    /* ── Form detection banner ───────────────────────── */
+    .form-detect-banner {
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .form-detect-banner.detected {
+      background: var(--green-l);
+      border: 1px solid var(--green-m);
+    }
+
+    .form-detect-banner.not-detected {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+    }
+
+    .form-detect-left {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .form-detect-status {
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .form-detect-banner.detected .form-detect-status { color: #065f46; }
+    .form-detect-banner.not-detected .form-detect-status { color: var(--fg-3); }
+
+    .form-detect-desc {
+      font-size: 10.5px;
+      margin-top: 2px;
+    }
+
+    .form-detect-banner.detected .form-detect-desc { color: #047857; }
+    .form-detect-banner.not-detected .form-detect-desc { color: var(--fg-4); }
+
+    .platform-tag {
+      font-size: 9.5px;
+      font-weight: 700;
+      background: var(--blue);
+      color: #fff;
+      padding: 2px 7px;
+      border-radius: 20px;
+      flex-shrink: 0;
+    }
+
+    /* ── Autofill result ─────────────────────────────── */
+    .autofill-result {
+      display: none;
+      border-radius: var(--radius);
+      padding: 10px 12px;
+    }
+
+    .autofill-result.success {
+      background: var(--green-l);
+      border: 1px solid var(--green-m);
+    }
+
+    .autofill-result.empty {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+    }
+
+    .autofill-result-header {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #065f46;
+    }
+
+    .autofill-result.empty .autofill-result-header { color: var(--fg-3); }
+
+    .autofill-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 7px;
+    }
+
+    .autofill-chip {
+      font-size: 10px;
+      font-weight: 600;
+      background: #fff;
+      border: 1px solid var(--green-m);
+      color: var(--green-d);
+      padding: 2px 6px;
+      border-radius: 5px;
+    }
+
+    /* ── Skeleton loaders ────────────────────────────── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--bg-3) 25%, var(--bg-2) 50%, var(--bg-3) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 5px;
+    }
+
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* ── Error state ─────────────────────────────────── */
+    .error-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 28px 20px;
+      text-align: center;
+    }
+
+    .error-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ef4444;
+    }
+
+    .error-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--fg);
+    }
+
+    .error-desc {
+      font-size: 11px;
+      color: var(--fg-3);
+      line-height: 1.5;
+    }
+
+    .retry-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 14px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 2px;
+    }
+
+    .retry-btn:hover { background: var(--blue-d); }
+
+    /* ── Footer ──────────────────────────────────────── */
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-2);
+      flex-shrink: 0;
+      margin-top: auto;
+    }
+
+    .footer-left {
+      font-size: 10px;
+      color: var(--fg-4);
+    }
+
+    .footer-left strong { color: var(--fg-3); }
+
+    .refresh-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 5px 10px;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--fg-3);
+      cursor: pointer;
+      transition: background 0.14s, border-color 0.14s;
+    }
+
+    .refresh-btn:hover {
+      background: var(--bg-3);
+      border-color: var(--border-2);
+    }
+
+    .refresh-btn.spinning svg {
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    /* ── Spacer ──────────────────────────────────────── */
+    .spacer { height: 14px; flex-shrink: 0; }
+
+    /* ── Hidden utility ──────────────────────────────── */
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="popup-scroll" id="popup-root">
+
+    <!-- ── HEADER ─────────────────────────────────────── -->
+    <header class="header">
       <div class="brand">
         <div class="brand-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2.5"
-               stroke-linecap="round" stroke-linejoin="round">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <rect width="20" height="14" x="2" y="6" rx="2"/>
             <path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
           </svg>
         </div>
         <div>
           <div class="brand-name">ApplyMate</div>
-          <div class="brand-sub">Safari Autofill Assistant</div>
+          <div class="brand-tagline">Safari Autofill Assistant</div>
         </div>
       </div>
-      <span id="version">v1.0.0</span>
+      <div class="header-right">
+        <span class="version-badge" id="version-badge">v1.0.0</span>
+        <div class="status-pill">
+          <div class="status-dot loading" id="status-dot"></div>
+          <span id="status-label">Starting…</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ── ERROR STATE (hidden by default) ──────────── -->
+    <div class="error-state hidden" id="error-state">
+      <div class="error-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </div>
+      <div>
+        <div class="error-title">Extension Unavailable</div>
+        <div class="error-desc" id="error-desc">Could not connect to the ApplyMate background worker.</div>
+      </div>
+      <button class="retry-btn" id="retry-btn">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+          <path d="M21 3v5h-5"/>
+        </svg>
+        Retry
+      </button>
     </div>
 
-    <!-- Status bar -->
-    <div class="status-bar">
-      <div id="status-dot" class="status-dot loading"></div>
-      <span id="status-label">Connecting…</span>
+    <!-- ── MAIN CONTENT ─────────────────────────────── -->
+    <div id="main-content">
+
+      <!-- Profile card -->
+      <div class="profile-card" id="profile-card">
+        <div class="profile-loading">
+          <div class="profile-avatar" id="profile-avatar">NK</div>
+          <div class="profile-info">
+            <div class="profile-name" id="profile-name">Loading profile…</div>
+            <div class="profile-title" id="profile-job-title">Fetching data from storage</div>
+          </div>
+        </div>
+        <div class="profile-completion">
+          <div class="completion-bar-wrap">
+            <div class="completion-bar" id="completion-bar" style="width: 0%"></div>
+          </div>
+          <span class="completion-pct" id="completion-pct">—%</span>
+        </div>
+      </div>
+
+      <!-- Quick actions -->
+      <div class="section">
+        <div class="section-label">Quick Actions</div>
+        <div class="quick-actions">
+
+          <!-- Autofill -->
+          <button class="action-btn primary" id="autofill-btn" title="Autofill the form on the current page">
+            <div class="action-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+              </svg>
+            </div>
+            <div class="action-label">
+              <span class="action-title" id="autofill-btn-text">Autofill Page</span>
+              <span class="action-sub" id="autofill-btn-sub">Fill detected fields</span>
+            </div>
+          </button>
+
+          <!-- View Profile -->
+          <a class="action-btn" href="http://localhost:3000/profile" target="_blank" rel="noreferrer"
+             title="Open candidate profile in dashboard">
+            <div class="action-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="8" r="4"/>
+                <path d="M20 21a8 8 0 1 0-16 0"/>
+              </svg>
+            </div>
+            <div class="action-label">
+              <span class="action-title">View Profile</span>
+              <span class="action-sub">Edit your info</span>
+            </div>
+          </a>
+
+          <!-- Manage Resume -->
+          <a class="action-btn" href="http://localhost:3000/resume" target="_blank" rel="noreferrer"
+             title="Open resume manager">
+            <div class="action-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+                <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+                <path d="M10 9H8M16 13H8M16 17H8"/>
+              </svg>
+            </div>
+            <div class="action-label">
+              <span class="action-title">Manage Resume</span>
+              <span class="action-sub">Update documents</span>
+            </div>
+          </a>
+
+          <!-- Settings -->
+          <a class="action-btn" href="http://localhost:3000/settings" target="_blank" rel="noreferrer"
+             title="Open extension settings">
+            <div class="action-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </div>
+            <div class="action-label">
+              <span class="action-title">Settings</span>
+              <span class="action-sub">Preferences</span>
+            </div>
+          </a>
+
+        </div>
+      </div>
+
+      <!-- Autofill result -->
+      <div class="section">
+        <div class="autofill-result" id="autofill-result">
+          <div class="autofill-result-header">
+            <svg width="13" height="13" id="autofill-result-icon" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 6 9 17l-5-5"/>
+            </svg>
+            <span id="autofill-result-msg"></span>
+          </div>
+          <div class="autofill-chips" id="autofill-chips"></div>
+        </div>
+      </div>
+
+      <!-- Website Status -->
+      <div class="section">
+        <div class="section-label">Current Website</div>
+        <div class="site-card">
+          <!-- Page name -->
+          <div class="site-row">
+            <svg class="site-icon" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+              <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+            </svg>
+            <div class="site-col">
+              <div class="site-key">Page Title</div>
+              <div class="site-val" id="page-title">Loading…</div>
+            </div>
+          </div>
+          <!-- Domain -->
+          <div class="site-row">
+            <svg class="site-icon" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 2a14.5 14.5 0 0 1 0 20 14.5 14.5 0 0 1 0-20"/>
+              <path d="M2 12h20"/>
+            </svg>
+            <div class="site-col">
+              <div class="site-key">Domain</div>
+              <div class="site-val" id="page-host">—</div>
+            </div>
+          </div>
+          <!-- URL -->
+          <div class="site-row">
+            <svg class="site-icon" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+            <div class="site-col">
+              <div class="site-key">URL</div>
+              <div class="site-val url" id="page-url">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Form Detection -->
+      <div class="section">
+        <div class="section-label">Application Form Detection</div>
+        <div class="form-detect-banner not-detected" id="form-detect-banner">
+          <div class="form-detect-left">
+            <svg id="form-detect-icon" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <div>
+              <div class="form-detect-status" id="form-detect-status">Scanning…</div>
+              <div class="form-detect-desc" id="form-detect-desc">Checking for application form fields</div>
+            </div>
+          </div>
+          <span class="platform-tag hidden" id="platform-tag"></span>
+        </div>
+      </div>
+
+      <div class="spacer"></div>
     </div>
 
-    <!-- Current Page Info -->
-    <div class="section">
-      <div class="section-label">Current Page Detected</div>
-      <div class="info-card">
-        <div class="info-row">
-          <svg class="info-icon" width="14" height="14" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round">
-            <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
-            <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
-          </svg>
-          <div class="info-col">
-            <div class="info-key">Page Title</div>
-            <div id="page-title" class="info-val">Loading…</div>
-          </div>
-        </div>
-
-        <div class="info-row">
-          <svg class="info-icon" width="14" height="14" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M12 2a14.5 14.5 0 0 1 0 20 14.5 14.5 0 0 1 0-20"/>
-            <path d="M2 12h20"/>
-          </svg>
-          <div class="info-col">
-            <div class="info-key">Domain</div>
-            <div id="page-host" class="info-val">—</div>
-          </div>
-        </div>
-
-        <div class="info-row">
-          <svg class="info-icon" width="14" height="14" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-          </svg>
-          <div class="info-col">
-            <div class="info-key">Full URL</div>
-            <div id="page-url" class="info-val">—</div>
-          </div>
-        </div>
+    <!-- ── FOOTER ─────────────────────────────────────── -->
+    <footer class="footer">
+      <div class="footer-left">
+        Updated <strong id="last-updated">—</strong>
       </div>
-
-      <!-- Application Form Detection Card -->
-      <div class="section-label" style="margin-top: 12px;">Application Form Detection</div>
-      <div id="form-detection-card" class="info-card" style="padding: 10px 12px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-          <div id="form-status-badge" style="display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; color: #475569;">
-            <span>Checking page…</span>
-          </div>
-          <span id="form-platform-tag" style="display: none; font-size: 10px; font-weight: 700; background: var(--blue); color: #fff; padding: 2px 7px; border-radius: 9999px;"></span>
-        </div>
-        <div id="form-details-text" style="font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.4;">
-          Scanning inputs for name, email, resume, and application fields…
-        </div>
-      </div>
-
-      <!-- Autofill Results Banner -->
-      <div id="autofill-result-banner" style="display: none; margin-top: 10px; padding: 10px 12px; border-radius: var(--radius); font-size: 11px;">
-        <div id="autofill-result-title" style="font-weight: 700; display: flex; align-items: center; gap: 5px;"></div>
-        <div id="autofill-result-fields" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;"></div>
-      </div>
-    </div>
-
-    <!-- Footer actions -->
-    <div class="footer">
-      <button class="btn-ghost" id="refresh-btn">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-             stroke-linejoin="round">
+      <button class="refresh-btn" id="refresh-btn">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
           <path d="M21 3v5h-5"/>
           <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
@@ -305,17 +863,10 @@
         </svg>
         Refresh
       </button>
-      <button class="btn-primary" id="autofill-btn">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-             stroke-linejoin="round">
-          <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
-        </svg>
-        <span>Autofill Form</span>
-      </button>
-    </div>
+    </footer>
 
-    <script src="popup.js"></script>
-  </body>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
 </html>
-

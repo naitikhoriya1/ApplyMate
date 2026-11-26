@@ -30,34 +30,81 @@ export type JobPlatform =
   | "None";
 
 export type SemanticFieldType =
+  // ── Personal identity ───────────────────────────────────────────────────
   | "fullName"
   | "firstName"
   | "lastName"
   | "email"
   | "phone"
+  // ── Location ────────────────────────────────────────────────────────────
   | "city"
   | "state"
   | "country"
   | "postalCode"
+  | "location"           // generic "current location" field
+  // ── Professional ────────────────────────────────────────────────────────
   | "currentTitle"
+  | "currentCompany"
+  | "previousCompany"
   | "experience"
+  // ── Social / Links ──────────────────────────────────────────────────────
   | "resumeLink"
   | "linkedin"
   | "github"
   | "portfolio"
+  // ── Narrative ───────────────────────────────────────────────────────────
   | "bio"
   | "skills"
+  // ── Education ───────────────────────────────────────────────────────────
   | "educationDegree"
   | "educationSchool"
-  | "educationGradYear"
+  | "educationGradYear"  // canonical: graduation year
+  // ── Preferences / Administrative ────────────────────────────────────────
   | "workAuth"
   | "noticePeriod"
   | "expectedSalary";
 
+/**
+ * Full metadata extracted from a form element used to drive classification.
+ * All fields are pre-normalised (lowercase, trimmed).
+ */
+export interface FieldMetadata {
+  /** Raw element for downstream reference */
+  element: HTMLElement;
+  /** Normalised label text (from <label>, aria-label, aria-labelledby) */
+  labelText: string;
+  /** Normalised placeholder */
+  placeholderText: string;
+  /** Normalised name attribute */
+  nameAttr: string;
+  /** Normalised id attribute */
+  idAttr: string;
+  /** HTML autocomplete token */
+  autocompleteToken: string;
+  /** HTML input type (text, email, tel, url, …) */
+  inputType: string;
+  /** Nearby container / sibling text (paragraph, div, span) */
+  contextText: string;
+  /** Concatenated normalised cue string for regex sweeps */
+  combined: string;
+}
+
 export interface ClassifiedFieldInfo {
   type: SemanticFieldType;
+  /** Human-readable display label for the field (e.g. "Full Name") */
   label: string;
+  /**
+   * 0–1 confidence score.
+   * ≥ 0.90  = high — fill without prompting
+   * 0.70–0.89 = medium — fill but allow undo
+   * 0.50–0.69 = low — flag as ambiguous, do not fill automatically
+   * < 0.50  = none — ignore
+   */
   confidence: number;
+  /** True when multiple rules matched with similar scores (needs disambiguation) */
+  ambiguous: boolean;
+  /** Signal source that produced the highest score */
+  matchedSignal: "inputType" | "autocomplete" | "placeholder" | "label" | "name" | "id" | "context" | "combined";
 }
 
 export interface FormDetectionResult {
@@ -77,11 +124,19 @@ export interface AutofillFieldResult {
   success: boolean;
 }
 
+export interface AutofillSummary {
+  detectedFields: number;
+  filledFields: number;
+  skippedFields: number;
+  failedFields: number;
+}
+
 export interface AutofillExecutionResult {
   success: boolean;
   filledCount: number;
   totalFieldsFound: number;
   filledFields: AutofillFieldResult[];
+  summary: AutofillSummary;
   message: string;
 }
 

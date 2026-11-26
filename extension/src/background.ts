@@ -158,6 +158,12 @@ ext.runtime.onMessage.addListener(
                 filledCount: 0,
                 totalFieldsFound: 0,
                 filledFields: [],
+                summary: {
+                  detectedFields: 0,
+                  filledFields: 0,
+                  skippedFields: 0,
+                  failedFields: 0,
+                },
                 message: "No active tab found.",
               },
             };
@@ -173,6 +179,12 @@ ext.runtime.onMessage.addListener(
                 filledCount: 0,
                 totalFieldsFound: 0,
                 filledFields: [],
+                summary: {
+                  detectedFields: 0,
+                  filledFields: 0,
+                  skippedFields: 0,
+                  failedFields: 0,
+                },
                 message: "Could not trigger autofill on this page.",
               },
             });
