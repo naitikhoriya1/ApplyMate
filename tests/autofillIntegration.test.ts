@@ -10,7 +10,7 @@ import {
   resetAutofillState,
   PROFILE_STORAGE_KEY,
 } from "../extension/autofill/autofillEngine.ts";
-import { DEFAULT_PROFILE } from "../src/lib/profile/defaultProfile.ts";
+import { SAMPLE_PROFILE as DEFAULT_PROFILE } from "./fixtures/sampleProfile.ts";
 import type { CandidateProfile } from "../src/types/profile.ts";
 
 /**

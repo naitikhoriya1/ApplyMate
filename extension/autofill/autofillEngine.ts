@@ -403,7 +403,7 @@ export function resolveValueForField(
     case "github":
       return social.github || null;
     case "portfolio":
-      return social.portfolio || null;
+      return social.portfolio || social.github || null;
     case "bio":
       return personal.bio || null;
     case "skills":

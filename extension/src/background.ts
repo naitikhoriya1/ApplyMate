@@ -29,20 +29,8 @@ const STORAGE_PROFILE_KEY = "applymate_profile";
 const tabPageInfo = new Map<number, PageInfoPayload>();
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
-ext.runtime.onInstalled.addListener(async ({ reason }) => {
+ext.runtime.onInstalled.addListener(({ reason }) => {
   console.log(`[ApplyMate SW] Installed/Updated — reason: ${reason}`);
-
-  // Seed default candidate profile if not present
-  try {
-    ext.storage.local.get(STORAGE_PROFILE_KEY, (res) => {
-      if (!res || !res[STORAGE_PROFILE_KEY]) {
-        ext.storage.local.set({ [STORAGE_PROFILE_KEY]: DEFAULT_PROFILE });
-        console.log("[ApplyMate SW] Seeded initial candidate profile into storage.");
-      }
-    });
-  } catch (e) {
-    console.warn("[ApplyMate SW] Storage seed warning:", e);
-  }
 });
 
 // ─── Tab cleanup on close ─────────────────────────────────────────────────────

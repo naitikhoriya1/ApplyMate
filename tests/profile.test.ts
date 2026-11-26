@@ -8,7 +8,7 @@ import {
   isValid,
 } from "../src/lib/validation/profileValidation.ts";
 import { computeCompletion } from "../src/lib/storage/profileStorage.ts";
-import { DEFAULT_PROFILE } from "../src/lib/profile/defaultProfile.ts";
+import { SAMPLE_PROFILE as DEFAULT_PROFILE } from "./fixtures/sampleProfile.ts";
 
 test("validatePersonal accepts valid personal info", () => {
   const errors = validatePersonal(DEFAULT_PROFILE.personal);
@@ -71,6 +71,19 @@ test("validateExperience ensures required fields and valid dates", () => {
   assert.strictEqual(typeof invalid.company, "string");
   assert.strictEqual(typeof invalid.role, "string");
   assert.strictEqual(typeof invalid.endDate, "string");
+
+  // Chronological validation on month-name strings ("May 2026" -> "Aug 2026")
+  const monthStrings = validateExperience({
+    id: "test-months",
+    company: "Fibe India",
+    role: "Software Engineer Intern",
+    startDate: "May 2026",
+    endDate: "Aug 2026",
+    current: false,
+    description: "",
+    skills: [],
+  });
+  assert.strictEqual(isValid(monthStrings), true);
 });
 
 test("validateEducation ensures required fields", () => {

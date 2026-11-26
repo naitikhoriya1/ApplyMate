@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { classifyFormField } from "../extension/autofill/fieldClassifier.ts";
 import { resolveValueForField, selectBestOption } from "../extension/autofill/autofillEngine.ts";
-import { DEFAULT_PROFILE } from "../src/lib/profile/defaultProfile.ts";
+import { SAMPLE_PROFILE as DEFAULT_PROFILE } from "./fixtures/sampleProfile.ts";
 
 /**
  * Helper to build a mock form element for Node unit tests

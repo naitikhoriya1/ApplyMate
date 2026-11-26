@@ -11,11 +11,12 @@
 
 import { useSyncExternalStore } from "react";
 import type { CandidateProfile } from "@/types/profile";
-import { DEFAULT_PROFILE } from "../profile/defaultProfile.ts";
+import { EMPTY_PROFILE } from "../profile/defaultProfile.ts";
 import {
   ProfileStorageService,
   defaultStorageService,
   PROFILE_STORAGE_KEY,
+  SETUP_COMPLETED_KEY,
 } from "./ProfileStorageService.ts";
 import { sanitizeProfileData } from "./sanitizer.ts";
 import { createStorageAdapter } from "./adapters/index.ts";
@@ -24,12 +25,52 @@ export {
   ProfileStorageService,
   defaultStorageService,
   PROFILE_STORAGE_KEY,
+  SETUP_COMPLETED_KEY,
   createStorageAdapter,
   sanitizeProfileData,
 };
 
 let cachedProfile: CandidateProfile | null = null;
+let cachedSetupCompleted: boolean | null = null;
 const listeners = new Set<() => void>();
+
+export function loadSetupCompleted(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(SETUP_COMPLETED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function setSetupCompleted(completed: boolean): void {
+  cachedSetupCompleted = completed;
+  if (typeof window !== "undefined") {
+    try {
+      if (completed) {
+        localStorage.setItem(SETUP_COMPLETED_KEY, "true");
+      } else {
+        localStorage.removeItem(SETUP_COMPLETED_KEY);
+      }
+    } catch {}
+  }
+  defaultStorageService.markSetupCompleted(completed).catch(() => {});
+  notify();
+}
+
+export function useSetupCompleted(): [boolean, (completed: boolean) => void] {
+  const completed = useSyncExternalStore(
+    subscribeProfile,
+    () => {
+      if (cachedSetupCompleted === null) {
+        cachedSetupCompleted = loadSetupCompleted();
+      }
+      return cachedSetupCompleted;
+    },
+    () => false
+  );
+  return [completed, setSetupCompleted];
+}
 
 function notify() {
   for (const listener of listeners) {
@@ -39,15 +80,15 @@ function notify() {
 
 /** Synchronously load profile, sanitizing any corrupted/missing keys. */
 export function loadProfile(): CandidateProfile {
-  if (typeof window === "undefined") return DEFAULT_PROFILE;
+  if (typeof window === "undefined") return EMPTY_PROFILE;
   try {
     const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
-    if (!raw) return structuredClone(DEFAULT_PROFILE);
+    if (!raw) return structuredClone(EMPTY_PROFILE);
     const parsed = JSON.parse(raw);
     const sanitized = sanitizeProfileData(parsed);
     return sanitized.profile;
   } catch {
-    return structuredClone(DEFAULT_PROFILE);
+    return structuredClone(EMPTY_PROFILE);
   }
 }
 
@@ -70,14 +111,16 @@ export function saveProfile(profile: CandidateProfile): void {
   notify();
 }
 
-/** Reset profile to factory defaults. */
+/** Reset profile to clean empty baseline and mark setup incomplete. */
 export function resetProfile(): CandidateProfile {
-  const fresh = structuredClone(DEFAULT_PROFILE);
+  const fresh = structuredClone(EMPTY_PROFILE);
   fresh.updatedAt = new Date().toISOString();
   cachedProfile = fresh;
+  cachedSetupCompleted = false;
   if (typeof window !== "undefined") {
     try {
       localStorage.removeItem(PROFILE_STORAGE_KEY);
+      localStorage.removeItem(SETUP_COMPLETED_KEY);
     } catch {
       // ignore
     }
@@ -87,12 +130,14 @@ export function resetProfile(): CandidateProfile {
   return fresh;
 }
 
-/** Delete stored profile entirely. */
+/** Delete stored profile entirely and mark setup incomplete. */
 export function deleteProfile(): void {
-  cachedProfile = structuredClone(DEFAULT_PROFILE);
+  cachedProfile = structuredClone(EMPTY_PROFILE);
+  cachedSetupCompleted = false;
   if (typeof window !== "undefined") {
     try {
       localStorage.removeItem(PROFILE_STORAGE_KEY);
+      localStorage.removeItem(SETUP_COMPLETED_KEY);
     } catch {
       // ignore
     }
@@ -106,6 +151,9 @@ export function subscribeProfile(callback: () => void): () => void {
   const handleStorage = (e: StorageEvent) => {
     if (e.key === PROFILE_STORAGE_KEY) {
       cachedProfile = loadProfile();
+      callback();
+    } else if (e.key === SETUP_COMPLETED_KEY) {
+      cachedSetupCompleted = loadSetupCompleted();
       callback();
     }
   };
@@ -134,7 +182,7 @@ export function getProfileSnapshot(): CandidateProfile {
 }
 
 export function getProfileServerSnapshot(): CandidateProfile {
-  return DEFAULT_PROFILE;
+  return EMPTY_PROFILE;
 }
 
 /** React hook for accessing and updating the candidate profile. */

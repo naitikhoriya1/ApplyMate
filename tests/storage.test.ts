@@ -11,7 +11,8 @@ import {
   validateCandidateProfile,
   isValid,
 } from "../src/lib/validation/profileValidation.ts";
-import { DEFAULT_PROFILE } from "../src/lib/profile/defaultProfile.ts";
+import { SAMPLE_PROFILE as DEFAULT_PROFILE } from "./fixtures/sampleProfile.ts";
+import { EMPTY_PROFILE } from "../src/lib/profile/defaultProfile.ts";
 import type { CandidateProfile } from "../src/types/profile.ts";
 
 test("MemoryStorageAdapter handles get, set, remove, clear, and getAll", async () => {
@@ -107,7 +108,7 @@ test("sanitizeProfileData heals corrupted and missing data", () => {
   // Completely empty
   const emptyRes = sanitizeProfileData(null);
   assert.strictEqual(emptyRes.healed, true);
-  assert.strictEqual(emptyRes.profile.personal.firstName, "Naitik");
+  assert.strictEqual(emptyRes.profile.personal.firstName, "");
 
   // Partial missing sections
   const partialRes = sanitizeProfileData({
@@ -147,9 +148,9 @@ test("ProfileStorageService performs full CRUD on profile and sections", async (
   const adapter = new MemoryStorageAdapter();
   const service = new ProfileStorageService(adapter);
 
-  // 1. Initial retrieval heals with default
+  // 1. Initial retrieval heals with empty baseline profile
   const initial = await service.getProfile();
-  assert.strictEqual(initial.personal.firstName, "Naitik");
+  assert.strictEqual(initial.personal.firstName, "");
 
   // 2. Update personal
   const updatedP = await service.updatePersonal({ bio: "Updated test bio" });
@@ -210,12 +211,12 @@ test("ProfileStorageService performs full CRUD on profile and sections", async (
 
   // 7. Reset profile
   const reset = await service.resetProfile();
-  assert.strictEqual(reset.personal.bio, DEFAULT_PROFILE.personal.bio);
+  assert.strictEqual(reset.personal.bio, EMPTY_PROFILE.personal.bio);
 
   // 8. Delete profile
   await service.deleteProfile();
   const deleted = await service.getProfile();
-  assert.strictEqual(deleted.personal.firstName, "Naitik"); // recovered with defaults
+  assert.strictEqual(deleted.personal.firstName, ""); // recovered with empty baseline
 });
 
 test("ProfileStorageService notifications trigger on updates", async () => {
@@ -244,6 +245,7 @@ test("ProfileStorageService exports and imports JSON", async () => {
   const adapter = new MemoryStorageAdapter();
   const service = new ProfileStorageService(adapter);
 
+  await service.saveProfile(DEFAULT_PROFILE);
   const exported = await service.exportProfileJson();
   assert.strictEqual(typeof exported, "string");
   const parsed = JSON.parse(exported);

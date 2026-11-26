@@ -342,7 +342,7 @@ const DETECTION_RULES: DetectionRule[] = [
       name: 0.86,
       id: 0.80,
     },
-    blocklist: /\b(linked\s*in|git\s*hub)\b/i,
+    blocklist: /\blinked\s*in\b/i,
   },
 
   // ── 7. First Name ───────────────────────────────────────────────────────

@@ -27,9 +27,10 @@ import type {
 import { createStorageAdapter } from "./adapters/index.ts";
 import { sanitizeProfileData } from "./sanitizer.ts";
 import { validateCandidateProfile } from "../validation/profileValidation.ts";
-import { DEFAULT_PROFILE } from "../profile/defaultProfile.ts";
+import { EMPTY_PROFILE } from "../profile/defaultProfile.ts";
 
 export const PROFILE_STORAGE_KEY = "applymate_profile";
+export const SETUP_COMPLETED_KEY = "applymate_setup_completed";
 
 export class ProfileStorageService {
   private adapter: StorageAdapter;
@@ -61,8 +62,8 @@ export class ProfileStorageService {
       this.cache = sanitized.profile;
       return sanitized.profile;
     } catch (e) {
-      console.warn("[ProfileStorageService] getProfile error, using default:", e);
-      this.cache = structuredClone(DEFAULT_PROFILE);
+      console.warn("[ProfileStorageService] getProfile error, using empty profile:", e);
+      this.cache = structuredClone(EMPTY_PROFILE);
       return this.cache;
     }
   }
@@ -71,7 +72,20 @@ export class ProfileStorageService {
    * Synchronous cached getter (useful for instant React rendering / useSyncExternalStore).
    */
   getCachedProfile(): CandidateProfile {
-    return this.cache ?? structuredClone(DEFAULT_PROFILE);
+    return this.cache ?? structuredClone(EMPTY_PROFILE);
+  }
+
+  async isSetupCompleted(): Promise<boolean> {
+    const val = await this.adapter.get<boolean>(SETUP_COMPLETED_KEY);
+    return val === true;
+  }
+
+  async markSetupCompleted(completed: boolean): Promise<void> {
+    if (completed) {
+      await this.adapter.set(SETUP_COMPLETED_KEY, true);
+    } else {
+      await this.adapter.remove(SETUP_COMPLETED_KEY);
+    }
   }
 
   /**
@@ -217,21 +231,23 @@ export class ProfileStorageService {
   }
 
   /**
-   * Deletes the stored candidate profile entirely.
+   * Deletes the stored candidate profile and clears setupCompleted flag.
    */
   async deleteProfile(): Promise<void> {
     await this.adapter.remove(PROFILE_STORAGE_KEY);
+    await this.adapter.remove(SETUP_COMPLETED_KEY);
     this.cache = null;
-    this.notify(structuredClone(DEFAULT_PROFILE));
+    this.notify(structuredClone(EMPTY_PROFILE));
   }
 
   /**
-   * Resets candidate profile to the default baseline.
+   * Resets candidate profile to the empty baseline and marks setup incomplete.
    */
   async resetProfile(): Promise<CandidateProfile> {
-    const fresh = structuredClone(DEFAULT_PROFILE);
+    const fresh = structuredClone(EMPTY_PROFILE);
     fresh.updatedAt = new Date().toISOString();
     await this.adapter.set(PROFILE_STORAGE_KEY, fresh);
+    await this.adapter.remove(SETUP_COMPLETED_KEY);
     this.cache = fresh;
     this.notify(fresh);
     return fresh;

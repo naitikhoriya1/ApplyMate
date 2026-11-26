@@ -9,6 +9,7 @@ import { GraduationCap, Plus, Trash2, Pencil, X, Check } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/Card";
 import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
+import { CalendarDateInput } from "@/components/ui/CalendarDateInput";
 import { Button } from "@/components/ui/Button";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import type { Education, ValidationErrors } from "@/types/profile";
@@ -120,20 +121,20 @@ export function EducationManager({ education, onChange }: EducationManagerProps)
                   />
                 </FormField>
                 <FormField label="Start Date" error={errors.startDate} required>
-                  <Input
-                    type="month"
+                  <CalendarDateInput
                     value={draft.startDate}
-                    onChange={(e) => setDraft({ ...draft, startDate: e.target.value })}
+                    onChange={(val) => setDraft({ ...draft, startDate: val })}
                     error={!!errors.startDate}
+                    placeholder="Select start date"
                   />
                 </FormField>
                 <FormField label="End Date" error={errors.endDate}>
-                  <Input
-                    type="month"
+                  <CalendarDateInput
                     value={draft.endDate}
-                    onChange={(e) => setDraft({ ...draft, endDate: e.target.value })}
+                    onChange={(val) => setDraft({ ...draft, endDate: val })}
                     disabled={draft.current}
                     error={!!errors.endDate}
+                    placeholder="Select end date"
                   />
                   <label className="mt-1.5 flex items-center gap-2 cursor-pointer select-none">
                     <input

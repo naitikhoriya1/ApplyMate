@@ -6,7 +6,7 @@ import {
   buildGroundedPrompt,
   generateGroundedAnswer,
 } from "../src/lib/ai/answerGenerator.ts";
-import { DEFAULT_PROFILE } from "../src/lib/profile/defaultProfile.ts";
+import { SAMPLE_PROFILE as DEFAULT_PROFILE } from "./fixtures/sampleProfile.ts";
 
 test("Includes all 7 required preset application questions", () => {
   const expected = [

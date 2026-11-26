@@ -9,7 +9,7 @@ import {
   executeAutofill,
   resetAutofillState,
 } from "../extension/autofill/autofillEngine.ts";
-import { DEFAULT_PROFILE } from "../src/lib/profile/defaultProfile.ts";
+import { SAMPLE_PROFILE as DEFAULT_PROFILE } from "./fixtures/sampleProfile.ts";
 
 function makeSiteEl(opts: {
   tagName?: string;

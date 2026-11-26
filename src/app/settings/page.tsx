@@ -11,6 +11,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ProfileStorageService } from "@/lib/storage/ProfileStorageService";
+import { deleteProfile, setSetupCompleted } from "@/lib/storage/profileStorage";
 import {
   APPLICATIONS_STORAGE_KEY,
   ACTIVITY_STORAGE_KEY,
@@ -47,8 +48,11 @@ export default function SettingsPage() {
   };
 
   const handleConfirmClearAllData = async () => {
+    deleteProfile();
+    setSetupCompleted(false);
     const adapter = createStorageAdapter();
     await adapter.remove("applymate_profile");
+    await adapter.remove("applymate_setup_completed");
     await adapter.remove(APPLICATIONS_STORAGE_KEY);
     await adapter.remove(ACTIVITY_STORAGE_KEY);
     await adapter.remove("applymate_last_job_analysis");

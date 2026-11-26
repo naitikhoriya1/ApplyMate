@@ -13,6 +13,7 @@ import {
   Sun,
   Moon,
 } from "lucide-react";
+import { useProfile, useSetupCompleted } from "@/lib/storage/profileStorage";
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -49,6 +50,13 @@ const navItems = [
 export function Sidebar({ onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [profile] = useProfile();
+  const [setupCompleted] = useSetupCompleted();
+
+  const fullName = `${profile.personal.firstName} ${profile.personal.lastName}`.trim();
+  const initialsText =
+    ((profile.personal.firstName[0] ?? "") + (profile.personal.lastName[0] ?? "")).toUpperCase() ||
+    "?";
 
   useEffect(() => {
     const stored =
@@ -155,14 +163,14 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       <div className="p-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center justify-between">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="h-8 w-8 rounded-full bg-linear-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">
-            NK
+            {initialsText}
           </div>
           <div className="min-w-0">
             <div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">
-              Naitik
+              {fullName || "New User"}
             </div>
             <div className="text-[11px] text-zinc-400 truncate">
-              Senior Engineer
+              {profile.personal.professionalTitle || (setupCompleted ? "Profile configured" : "Setup needed")}
             </div>
           </div>
         </div>

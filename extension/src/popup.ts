@@ -166,10 +166,21 @@ function hideError(): void {
 
 // ─── Profile rendering ────────────────────────────────────────────────────────
 function renderProfile(profile: CandidateProfile): void {
-  const { firstName, lastName, professionalTitle } = profile.personal;
+  const { firstName, lastName, professionalTitle, email } = profile.personal;
+  const isBlank = !firstName.trim() && !email.trim();
+  if (isBlank) {
+    profileAvatar.textContent = "+";
+    profileName.textContent = "Complete Initial Setup";
+    profileJobTitle.textContent =
+      "Set up manually or import your PDF resume in the dashboard";
+    completionBar.style.width = "0%";
+    completionPct.textContent = "0%";
+    return;
+  }
+
   profileAvatar.textContent = initials(firstName, lastName);
-  profileName.textContent   = `${firstName} ${lastName}`;
-  profileJobTitle.textContent = truncate(professionalTitle, 60);
+  profileName.textContent   = `${firstName} ${lastName}`.trim();
+  profileJobTitle.textContent = truncate(professionalTitle || "Candidate", 60);
 
   const pct = computeCompletion(profile);
   completionBar.style.width = `${pct}%`;

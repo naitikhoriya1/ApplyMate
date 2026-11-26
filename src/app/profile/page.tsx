@@ -19,7 +19,12 @@ import { EducationManager } from "@/components/profile/EducationManager";
 import { SkillsManager } from "@/components/profile/SkillsManager";
 import { ApplicationPreferencesForm } from "@/components/profile/ApplicationPreferencesForm";
 import { ProfilePreview } from "@/components/profile/ProfilePreview";
-import { useProfile, resetProfile, computeCompletion } from "@/lib/storage/profileStorage";
+import {
+  useProfile,
+  resetProfile,
+  computeCompletion,
+  setSetupCompleted,
+} from "@/lib/storage/profileStorage";
 import type { CandidateProfile, PersonalInfo, SocialLinks } from "@/types/profile";
 
 export default function ProfilePage() {
@@ -42,6 +47,9 @@ export default function ProfilePage() {
 
   function handlePersonalSave(personal: PersonalInfo, social: SocialLinks) {
     persist({ ...profile, personal, social });
+    if (personal.firstName.trim() && personal.email.trim()) {
+      setSetupCompleted(true);
+    }
   }
 
   function handleExperienceChange(experience: CandidateProfile["experience"]) {

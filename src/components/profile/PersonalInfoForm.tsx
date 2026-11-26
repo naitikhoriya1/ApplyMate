@@ -102,11 +102,11 @@ export function PersonalInfoForm({ personal, social, onSave }: PersonalInfoFormP
         />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {field("firstName", "First Name", { required: true, placeholder: "Naitik" })}
-          {field("lastName", "Last Name", { required: true, placeholder: "Khoriya" })}
+          {field("firstName", "First Name", { required: true, placeholder: "First name" })}
+          {field("lastName", "Last Name", { required: true, placeholder: "Last name" })}
           {field("professionalTitle", "Professional Title", {
             required: true,
-            placeholder: "QA Automation Engineer | SDET",
+            placeholder: "e.g. Software Engineer",
           })}
           {field("email", "Email Address", {
             required: true,

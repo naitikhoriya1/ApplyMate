@@ -5,7 +5,7 @@ import {
   validateCoverLetterRequest,
   generateCoverLetter,
 } from "../src/lib/ai/coverLetterGenerator.ts";
-import { DEFAULT_PROFILE } from "../src/lib/profile/defaultProfile.ts";
+import { SAMPLE_PROFILE as DEFAULT_PROFILE } from "./fixtures/sampleProfile.ts";
 
 test("Generates personalized cover letter with actual candidate details and no placeholders", () => {
   const res = generateLocalCoverLetter({

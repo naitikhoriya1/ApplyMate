@@ -72,6 +72,26 @@ export function validateSocial(
 
 // ─── Experience ───────────────────────────────────────────────────────────────
 
+/**
+ * Parses "YYYY-MM", "YYYY-MM-DD", or human strings like "May 2026" / "Aug 2026"
+ * into UTC epoch milliseconds for accurate chronological comparison.
+ */
+export function parseComparableDate(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+  if (isoMatch) {
+    const y = parseInt(isoMatch[1], 10);
+    const m = parseInt(isoMatch[2], 10) - 1;
+    const d = isoMatch[3] ? parseInt(isoMatch[3], 10) : 1;
+    return Date.UTC(y, m, d);
+  }
+
+  const ts = Date.parse(trimmed);
+  return Number.isNaN(ts) ? null : ts;
+}
+
 export function validateExperience(
   data: Experience
 ): ValidationErrors<Experience> {
@@ -82,13 +102,12 @@ export function validateExperience(
   if (!data.startDate) errors.startDate = "Start date is required.";
   if (!data.current && !data.endDate)
     errors.endDate = "End date is required (or mark as current).";
-  if (
-    data.startDate &&
-    data.endDate &&
-    !data.current &&
-    data.endDate < data.startDate
-  ) {
-    errors.endDate = "End date must be after start date.";
+  if (data.startDate && data.endDate && !data.current) {
+    const startMs = parseComparableDate(data.startDate);
+    const endMs = parseComparableDate(data.endDate);
+    if (startMs !== null && endMs !== null ? endMs < startMs : data.endDate < data.startDate) {
+      errors.endDate = "End date must be after start date.";
+    }
   }
 
   return errors;
