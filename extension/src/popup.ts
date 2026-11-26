@@ -22,8 +22,15 @@ import type {
   FieldReviewItem,
   UndoAutofillResMessage,
   FillSingleFieldResMessage,
+  AnalyzeJobResMessage,
+  JobAnalysisResult,
+  InsertAnswerResMessage,
 } from "./types";
 import type { CandidateProfile } from "../../src/types/profile";
+import {
+  generateLocalCoverLetter,
+  type CoverLetterFormat,
+} from "../../src/lib/ai/localCoverLetter";
 
 // ─── Extension API shim (Safari / Chrome) ───────────────────────────────────
 const ext = (typeof browser !== "undefined" ? browser : chrome) as typeof chrome;
@@ -93,6 +100,34 @@ const manualBannerText = $("manual-banner-text");
 const undoBtn          = $<HTMLButtonElement>("undo-btn");
 const rerunBtn         = $<HTMLButtonElement>("rerun-btn");
 const reviewList       = $("review-list");
+const analyzeJobBtn    = $<HTMLButtonElement>("analyze-job-btn");
+const analyzeSelBtn    = $<HTMLButtonElement>("analyze-selection-btn");
+const jobFieldsWrap    = $("job-fields");
+const jobTitleInput    = $<HTMLInputElement>("job-title-input");
+const jobCompanyInput  = $<HTMLInputElement>("job-company-input");
+const jobLocationInput = $<HTMLInputElement>("job-location-input");
+const jobTypeInput     = $<HTMLInputElement>("job-type-input");
+const jobExpInput      = $<HTMLInputElement>("job-exp-input");
+const jobReqSkillsIn   = $<HTMLInputElement>("job-req-skills-input");
+const jobPrefSkillsIn  = $<HTMLInputElement>("job-pref-skills-input");
+const jobDescInput     = $<HTMLTextAreaElement>("job-desc-input");
+const jobSaveBtn       = $<HTMLButtonElement>("job-save-btn");
+const jobSaveStatus    = $("job-save-status");
+const aiQuestionSelect = $<HTMLSelectElement>("ai-question-select");
+const aiCustomWrap     = $("ai-custom-wrap");
+const aiCustomInput    = $<HTMLInputElement>("ai-custom-question");
+const aiGenerateBtn    = $<HTMLButtonElement>("ai-generate-btn");
+const aiAnswerTextarea = $<HTMLTextAreaElement>("ai-answer-textarea");
+const aiCopyBtn        = $<HTMLButtonElement>("ai-copy-btn");
+const aiInsertBtn      = $<HTMLButtonElement>("ai-insert-btn");
+const aiStatusMsg      = $("ai-status-msg");
+const clFormatSelect   = $<HTMLSelectElement>("cl-format-select");
+const clGenerateBtn    = $<HTMLButtonElement>("cl-generate-btn");
+const clRegenerateBtn  = $<HTMLButtonElement>("cl-regenerate-btn");
+const clTextarea       = $<HTMLTextAreaElement>("cl-textarea");
+const clCopyBtn        = $<HTMLButtonElement>("cl-copy-btn");
+const clInsertBtn      = $<HTMLButtonElement>("cl-insert-btn");
+const clStatusMsg      = $("cl-status-msg");
 const pageTitle        = $("page-title");
 const pageHost         = $("page-host");
 const pageUrl          = $("page-url");
@@ -109,6 +144,7 @@ let isLoading = false;
 let isAutofilling = false;
 let lastPageTs = 0;
 let lastAutofillResult: AutofillExecutionResult | null = null;
+let loadedProfile: CandidateProfile | null = null;
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
 function setStatus(state: "active" | "loading" | "error", text: string): void {
@@ -316,6 +352,7 @@ async function loadAll(): Promise<void> {
 
   // Render profile
   if (profileRes.status === "fulfilled" && profileRes.value?.type === "GET_PROFILE_RES" && profileRes.value.payload) {
+    loadedProfile = profileRes.value.payload;
     renderProfile(profileRes.value.payload);
   } else {
     profileName.textContent = "Profile not found";
@@ -478,6 +515,229 @@ setInterval(() => {
   }
 }, 10_000);
 
+// ─── Job Description Analyzer handlers ───────────────────────────────────────
+let currentJobAnalysis: JobAnalysisResult | null = null;
+const JOB_ANALYSIS_KEY = "applymate_last_job_analysis";
+
+function renderJobAnalysis(job: JobAnalysisResult): void {
+  currentJobAnalysis = job;
+  jobFieldsWrap.classList.remove("hidden");
+  jobTitleInput.value = job.jobTitle ?? "";
+  jobCompanyInput.value = job.companyName ?? "";
+  jobLocationInput.value = job.location ?? "";
+  jobTypeInput.value = job.employmentType ?? "";
+  jobExpInput.value = job.experienceRequired ?? "";
+  jobReqSkillsIn.value = (job.requiredSkills ?? []).join(", ");
+  jobPrefSkillsIn.value = (job.preferredSkills ?? []).join(", ");
+  jobDescInput.value = job.jobDescription ?? "";
+  jobSaveStatus.textContent = job.usedManualSelection ? "Extracted from selection" : "";
+}
+
+async function runJobAnalysis(useSelection: boolean): Promise<void> {
+  analyzeJobBtn.disabled = true;
+  analyzeSelBtn.disabled = true;
+  jobSaveStatus.textContent = "Analyzing…";
+
+  try {
+    const res = (await ext.runtime.sendMessage({
+      type: "ANALYZE_JOB",
+      payload: { useSelection },
+    })) as AnalyzeJobResMessage;
+
+    if (res?.type === "ANALYZE_JOB_RES" && res.payload) {
+      renderJobAnalysis(res.payload);
+    }
+  } catch {
+    jobFieldsWrap.classList.remove("hidden");
+    jobSaveStatus.textContent = "Could not scan page — edit manually below.";
+  } finally {
+    analyzeJobBtn.disabled = false;
+    analyzeSelBtn.disabled = false;
+  }
+}
+
+async function saveEditedJobAnalysis(): Promise<void> {
+  const splitSkills = (raw: string) =>
+    raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+  const updated: JobAnalysisResult = {
+    companyName: jobCompanyInput.value.trim(),
+    jobTitle: jobTitleInput.value.trim(),
+    jobDescription: jobDescInput.value.trim(),
+    requiredSkills: splitSkills(jobReqSkillsIn.value),
+    preferredSkills: splitSkills(jobPrefSkillsIn.value),
+    experienceRequired: jobExpInput.value.trim(),
+    location: jobLocationInput.value.trim(),
+    employmentType: jobTypeInput.value.trim(),
+    platform: currentJobAnalysis?.platform ?? "Generic Application",
+    sourceUrl: currentJobAnalysis?.sourceUrl ?? "",
+    extractedAt: new Date().toISOString(),
+    usedManualSelection: currentJobAnalysis?.usedManualSelection,
+  };
+
+  currentJobAnalysis = updated;
+  try {
+    await ext.storage.local.set({ [JOB_ANALYSIS_KEY]: updated });
+    jobSaveStatus.textContent = "Saved!";
+    setTimeout(() => {
+      if (jobSaveStatus.textContent === "Saved!") jobSaveStatus.textContent = "";
+    }, 2500);
+  } catch {
+    jobSaveStatus.textContent = "Updated in memory";
+  }
+}
+
+// ─── AI Answer Generator handlers ─────────────────────────────────────────────
+const AI_API_ENDPOINT = "http://localhost:3000/api/ai/answer";
+
+function getSelectedQuestion(): string {
+  if (aiQuestionSelect.value === "__custom__") {
+    return aiCustomInput.value.trim();
+  }
+  return aiQuestionSelect.value;
+}
+
+async function handleGenerateAiAnswer(): Promise<void> {
+  const question = getSelectedQuestion();
+  if (!question) {
+    aiStatusMsg.textContent = "Enter a question first.";
+    return;
+  }
+  if (!loadedProfile) {
+    aiStatusMsg.textContent = "Profile not loaded yet.";
+    return;
+  }
+
+  aiGenerateBtn.disabled = true;
+  aiStatusMsg.textContent = "Generating…";
+
+  try {
+    const res = await fetch(AI_API_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question,
+        profile: loadedProfile,
+        jobContext: currentJobAnalysis ?? undefined,
+      }),
+    });
+
+    const data = (await res.json()) as { answer?: string; error?: string };
+    if (!res.ok || !data.answer) {
+      aiStatusMsg.textContent = truncate(
+        data.error ?? "AI unavailable — write/edit manually.",
+        45
+      );
+      return;
+    }
+
+    aiAnswerTextarea.value = data.answer;
+    aiStatusMsg.textContent = "Ready to review";
+  } catch {
+    aiStatusMsg.textContent = "Dashboard API offline — edit manually.";
+  } finally {
+    aiGenerateBtn.disabled = false;
+  }
+}
+
+async function handleCopyAiAnswer(): Promise<void> {
+  const text = aiAnswerTextarea.value.trim();
+  if (!text) {
+    aiStatusMsg.textContent = "Nothing to copy.";
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    aiStatusMsg.textContent = "Copied!";
+    setTimeout(() => {
+      if (aiStatusMsg.textContent === "Copied!") aiStatusMsg.textContent = "";
+    }, 2000);
+  } catch {
+    aiStatusMsg.textContent = "Copy failed.";
+  }
+}
+
+async function handleInsertAiAnswer(): Promise<void> {
+  const text = aiAnswerTextarea.value.trim();
+  if (!text) {
+    aiStatusMsg.textContent = "Write or generate an answer first.";
+    return;
+  }
+  try {
+    const res = (await ext.runtime.sendMessage({
+      type: "INSERT_ANSWER",
+      payload: { answer: text },
+    })) as InsertAnswerResMessage;
+    aiStatusMsg.textContent = res?.payload?.message ?? "Insert failed.";
+  } catch {
+    aiStatusMsg.textContent = "Could not reach page.";
+  }
+}
+
+// ─── Cover Letter & Application Email Generator ──────────────────────────────
+let coverLetterVariant = 0;
+
+function generateCoverLetterDraft(regenerate: boolean): void {
+  if (!loadedProfile) {
+    clStatusMsg.textContent = "Profile not loaded yet.";
+    return;
+  }
+
+  if (regenerate) {
+    coverLetterVariant++;
+  } else {
+    coverLetterVariant = 0;
+  }
+
+  const format = clFormatSelect.value as CoverLetterFormat;
+  const result = generateLocalCoverLetter({
+    format,
+    profile: loadedProfile,
+    jobContext: currentJobAnalysis ?? undefined,
+    variant: coverLetterVariant,
+  });
+
+  clTextarea.value = result.content;
+  clStatusMsg.textContent = regenerate ? "Regenerated" : "Generated";
+}
+
+async function handleCopyCoverLetter(): Promise<void> {
+  const text = clTextarea.value.trim();
+  if (!text) {
+    clStatusMsg.textContent = "Nothing to copy.";
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    clStatusMsg.textContent = "Copied!";
+    setTimeout(() => {
+      if (clStatusMsg.textContent === "Copied!") clStatusMsg.textContent = "";
+    }, 2000);
+  } catch {
+    clStatusMsg.textContent = "Copy failed.";
+  }
+}
+
+async function handleInsertCoverLetter(): Promise<void> {
+  const text = clTextarea.value.trim();
+  if (!text) {
+    clStatusMsg.textContent = "Generate or write text first.";
+    return;
+  }
+  try {
+    const res = (await ext.runtime.sendMessage({
+      type: "INSERT_ANSWER",
+      payload: { answer: text },
+    })) as InsertAnswerResMessage;
+    clStatusMsg.textContent = res?.payload?.message ?? "Insert failed.";
+  } catch {
+    clStatusMsg.textContent = "Could not reach page.";
+  }
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
   loadAll();
@@ -486,6 +746,19 @@ document.addEventListener("DOMContentLoaded", () => {
   autofillBtn.addEventListener("click", triggerAutofill);
   undoBtn.addEventListener("click", handleUndo);
   rerunBtn.addEventListener("click", handleRerunDetection);
+  analyzeJobBtn.addEventListener("click", () => runJobAnalysis(false));
+  analyzeSelBtn.addEventListener("click", () => runJobAnalysis(true));
+  jobSaveBtn.addEventListener("click", saveEditedJobAnalysis);
+  aiQuestionSelect.addEventListener("change", () => {
+    aiCustomWrap.classList.toggle("hidden", aiQuestionSelect.value !== "__custom__");
+  });
+  aiGenerateBtn.addEventListener("click", handleGenerateAiAnswer);
+  aiCopyBtn.addEventListener("click", handleCopyAiAnswer);
+  aiInsertBtn.addEventListener("click", handleInsertAiAnswer);
+  clGenerateBtn.addEventListener("click", () => generateCoverLetterDraft(false));
+  clRegenerateBtn.addEventListener("click", () => generateCoverLetterDraft(true));
+  clCopyBtn.addEventListener("click", handleCopyCoverLetter);
+  clInsertBtn.addEventListener("click", handleInsertCoverLetter);
   reviewList.addEventListener("click", (e) => {
     const target = e.target as HTMLElement | null;
     const btn = target?.closest?.<HTMLButtonElement>("[data-fill-id]");

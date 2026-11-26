@@ -674,6 +674,81 @@
 
     .review-manual-btn:hover { background: var(--blue-d); }
 
+    /* ── Job Description Analyzer ────────────────────── */
+    .job-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+    }
+
+    .job-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .job-fields {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .job-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .job-field-label {
+      display: block;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--fg-4);
+      margin-bottom: 2px;
+    }
+
+    .job-input,
+    .job-textarea {
+      width: 100%;
+      font-family: inherit;
+      font-size: 11px;
+      color: var(--fg);
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 7px;
+      outline: none;
+    }
+
+    .job-input:focus,
+    .job-textarea:focus {
+      border-color: var(--blue);
+    }
+
+    .job-textarea {
+      resize: vertical;
+      min-height: 56px;
+      max-height: 120px;
+      line-height: 1.4;
+    }
+
+    .job-save-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .job-save-status {
+      font-size: 10px;
+      color: var(--green-d);
+      font-weight: 600;
+    }
+
     /* ── Skeleton loaders ────────────────────────────── */
     .skeleton {
       background: linear-gradient(90deg, var(--bg-3) 25%, var(--bg-2) 50%, var(--bg-3) 75%);
@@ -1042,6 +1117,150 @@
             </div>
           </div>
           <span class="platform-tag hidden" id="platform-tag"></span>
+        </div>
+      </div>
+
+      <!-- Job Description Analyzer -->
+      <div class="section">
+        <div class="section-label">Job Description Analyzer</div>
+        <div class="job-card">
+          <div class="job-actions">
+            <button class="review-btn" id="analyze-job-btn" type="button">
+              Analyze Job
+            </button>
+            <button class="review-btn" id="analyze-selection-btn" type="button" title="Analyze highlighted text on the page">
+              Use Selection
+            </button>
+          </div>
+
+          <div class="job-fields hidden" id="job-fields">
+            <div class="job-grid-2">
+              <div>
+                <label class="job-field-label" for="job-title-input">Job Title</label>
+                <input class="job-input" id="job-title-input" type="text" placeholder="e.g. QA Automation Engineer" />
+              </div>
+              <div>
+                <label class="job-field-label" for="job-company-input">Company</label>
+                <input class="job-input" id="job-company-input" type="text" placeholder="Company name" />
+              </div>
+            </div>
+
+            <div class="job-grid-2">
+              <div>
+                <label class="job-field-label" for="job-location-input">Location</label>
+                <input class="job-input" id="job-location-input" type="text" placeholder="Location" />
+              </div>
+              <div>
+                <label class="job-field-label" for="job-type-input">Employment Type</label>
+                <input class="job-input" id="job-type-input" type="text" placeholder="Full-time / Intern" />
+              </div>
+            </div>
+
+            <div>
+              <label class="job-field-label" for="job-exp-input">Experience Required</label>
+              <input class="job-input" id="job-exp-input" type="text" placeholder="e.g. 1-3 years" />
+            </div>
+
+            <div>
+              <label class="job-field-label" for="job-req-skills-input">Required Skills</label>
+              <input class="job-input" id="job-req-skills-input" type="text" placeholder="Playwright, TypeScript, Jest" />
+            </div>
+
+            <div>
+              <label class="job-field-label" for="job-pref-skills-input">Preferred Skills</label>
+              <input class="job-input" id="job-pref-skills-input" type="text" placeholder="Docker, AWS" />
+            </div>
+
+            <div>
+              <label class="job-field-label" for="job-desc-input">Job Description</label>
+              <textarea class="job-textarea" id="job-desc-input" placeholder="Extracted or pasted description…"></textarea>
+            </div>
+
+            <div class="job-save-row">
+              <span class="job-save-status" id="job-save-status"></span>
+              <button class="review-manual-btn" id="job-save-btn" type="button">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Application Answer Generator (Optional) -->
+      <div class="section">
+        <div class="section-label">AI Answer Generator (Optional)</div>
+        <div class="job-card">
+          <div class="job-fields" style="margin-top: 0;">
+            <div>
+              <label class="job-field-label" for="ai-question-select">Application Question</label>
+              <select class="job-input" id="ai-question-select">
+                <option value="Tell me about yourself.">Tell me about yourself.</option>
+                <option value="Why should we hire you?">Why should we hire you?</option>
+                <option value="Why are you interested in this role?">Why are you interested in this role?</option>
+                <option value="Describe your testing experience.">Describe your testing experience.</option>
+                <option value="Describe a project you worked on.">Describe a project you worked on.</option>
+                <option value="What are your strengths?">What are your strengths?</option>
+                <option value="Why do you want to join this company?">Why do you want to join this company?</option>
+                <option value="__custom__">Custom question…</option>
+              </select>
+            </div>
+
+            <div class="hidden" id="ai-custom-wrap">
+              <label class="job-field-label" for="ai-custom-question">Custom Question</label>
+              <input class="job-input" id="ai-custom-question" type="text" placeholder="Enter your application question…" />
+            </div>
+
+            <div class="job-actions">
+              <button class="review-btn" id="ai-generate-btn" type="button">
+                Generate Answer
+              </button>
+            </div>
+
+            <div>
+              <label class="job-field-label" for="ai-answer-textarea">Review &amp; Edit Answer</label>
+              <textarea class="job-textarea" id="ai-answer-textarea" placeholder="Generated answer appears here — or write your own…"></textarea>
+            </div>
+
+            <div class="job-save-row">
+              <span class="job-save-status" id="ai-status-msg"></span>
+              <div style="display: flex; gap: 4px;">
+                <button class="review-btn" id="ai-copy-btn" type="button" style="flex: 0 0 auto;">Copy</button>
+                <button class="review-manual-btn" id="ai-insert-btn" type="button">Insert</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Personalized Cover Letter & Application Email Generator -->
+      <div class="section">
+        <div class="section-label">Cover Letter &amp; Email Generator</div>
+        <div class="job-card">
+          <div class="job-fields" style="margin-top: 0;">
+            <div>
+              <label class="job-field-label" for="cl-format-select">Format</label>
+              <select class="job-input" id="cl-format-select">
+                <option value="cover_letter">Cover Letter</option>
+                <option value="application_email">Job Application Email</option>
+              </select>
+            </div>
+
+            <div class="job-actions">
+              <button class="review-btn" id="cl-generate-btn" type="button">Generate</button>
+              <button class="review-btn" id="cl-regenerate-btn" type="button">Regenerate</button>
+            </div>
+
+            <div>
+              <label class="job-field-label" for="cl-textarea">Review &amp; Edit</label>
+              <textarea class="job-textarea" id="cl-textarea" style="min-height: 84px;" placeholder="Click Generate to draft a personalized cover letter or email…"></textarea>
+            </div>
+
+            <div class="job-save-row">
+              <span class="job-save-status" id="cl-status-msg"></span>
+              <div style="display: flex; gap: 4px;">
+                <button class="review-btn" id="cl-copy-btn" type="button" style="flex: 0 0 auto;">Copy</button>
+                <button class="review-manual-btn" id="cl-insert-btn" type="button">Insert</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

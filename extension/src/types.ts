@@ -20,6 +20,10 @@ export type MessageType =
   | "FILL_SINGLE_FIELD"   // popup → content: manually fill a single detected field
   | "FILL_SINGLE_FIELD_RES" // content → popup: single field fill result
   | "RERUN_DETECTION"     // popup → content: re-scan DOM for form fields
+  | "ANALYZE_JOB"         // popup → content: extract & analyze job listing
+  | "ANALYZE_JOB_RES"     // content → popup: job analysis result
+  | "INSERT_ANSWER"       // popup → content: insert edited answer into textarea
+  | "INSERT_ANSWER_RES"   // content → popup: insertion result
   | "PING"                // health check
   | "PONG";               // health check response
 
@@ -199,6 +203,35 @@ export type PageInfoReqMessage = Message<"PAGE_INFO_REQ">;
 export type PageInfoResMessage = Message<"PAGE_INFO_RES", PageInfoPayload | null>;
 export type GetProfileMessage = Message<"GET_PROFILE">;
 export type GetProfileResMessage = Message<"GET_PROFILE_RES", CandidateProfile>;
+export interface JobAnalysisResult {
+  companyName: string;
+  jobTitle: string;
+  jobDescription: string;
+  requiredSkills: string[];
+  preferredSkills: string[];
+  experienceRequired: string;
+  location: string;
+  employmentType: string;
+  platform: JobPlatform;
+  sourceUrl: string;
+  extractedAt: string;
+  usedManualSelection?: boolean;
+}
+
+export interface AnalyzeJobPayload {
+  useSelection?: boolean;
+  manualText?: string;
+}
+
+export interface InsertAnswerPayload {
+  answer: string;
+}
+
+export interface InsertAnswerResult {
+  success: boolean;
+  message: string;
+}
+
 export type TriggerAutofillMessage = Message<"TRIGGER_AUTOFILL">;
 export type AutofillResMessage = Message<"AUTOFILL_RES", AutofillExecutionResult>;
 export type UndoAutofillMessage = Message<"UNDO_AUTOFILL">;
@@ -206,6 +239,10 @@ export type UndoAutofillResMessage = Message<"UNDO_AUTOFILL_RES", UndoAutofillRe
 export type FillSingleFieldMessage = Message<"FILL_SINGLE_FIELD", FillSingleFieldPayload>;
 export type FillSingleFieldResMessage = Message<"FILL_SINGLE_FIELD_RES", FillSingleFieldResult>;
 export type RerunDetectionMessage = Message<"RERUN_DETECTION">;
+export type AnalyzeJobMessage = Message<"ANALYZE_JOB", AnalyzeJobPayload>;
+export type AnalyzeJobResMessage = Message<"ANALYZE_JOB_RES", JobAnalysisResult>;
+export type InsertAnswerMessage = Message<"INSERT_ANSWER", InsertAnswerPayload>;
+export type InsertAnswerResMessage = Message<"INSERT_ANSWER_RES", InsertAnswerResult>;
 export type PingMessage = Message<"PING">;
 export type PongMessage = Message<"PONG", { version: string }>;
 
@@ -222,5 +259,9 @@ export type AnyMessage =
   | FillSingleFieldMessage
   | FillSingleFieldResMessage
   | RerunDetectionMessage
+  | AnalyzeJobMessage
+  | AnalyzeJobResMessage
+  | InsertAnswerMessage
+  | InsertAnswerResMessage
   | PingMessage
   | PongMessage;

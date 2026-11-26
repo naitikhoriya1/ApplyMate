@@ -25,7 +25,17 @@ import type {
   UndoAutofillResMessage,
   FillSingleFieldResMessage,
   FillSingleFieldPayload,
+  AnalyzeJobPayload,
+  AnalyzeJobResMessage,
+  InsertAnswerPayload,
+  InsertAnswerResMessage,
 } from "./types";
+import { analyzeJobPage, analyzeSelectedText } from "../analyzer/jobAnalyzer";
+import {
+  setNativeValue,
+  dispatchInputEvents,
+  highlightField,
+} from "../autofill/autofillEngine";
 import {
   executeAutofill,
   undoLastAutofill,
@@ -903,6 +913,71 @@ ext.runtime.onMessage.addListener(
   (message: AnyMessage, _sender, sendResponse) => {
     if (message.type === "PAGE_INFO_REQ") {
       sendResponse({ type: "PAGE_INFO_RES", payload: getPageSnapshot() });
+      return false;
+    }
+
+    if (message.type === "INSERT_ANSWER") {
+      const payload = message.payload as InsertAnswerPayload | undefined;
+      const text = payload?.answer?.trim() ?? "";
+      if (!text) {
+        sendResponse({
+          type: "INSERT_ANSWER_RES",
+          payload: { success: false, message: "Answer text is empty." },
+        } satisfies InsertAnswerResMessage);
+        return false;
+      }
+
+      // Prefer currently focused textarea, otherwise first visible textarea outside ApplyMate
+      const active = document.activeElement;
+      const target =
+        active &&
+        active.tagName === "TEXTAREA" &&
+        !active.closest("#applymate-extension-root")
+          ? (active as HTMLTextAreaElement)
+          : Array.from(document.querySelectorAll<HTMLTextAreaElement>("textarea")).find(
+              (ta) => !ta.disabled && !ta.readOnly && !ta.closest("#applymate-extension-root")
+            );
+
+      if (!target) {
+        sendResponse({
+          type: "INSERT_ANSWER_RES",
+          payload: {
+            success: false,
+            message: "No target textarea found on this page. Use Copy instead.",
+          },
+        } satisfies InsertAnswerResMessage);
+        return false;
+      }
+
+      setNativeValue(target, text);
+      dispatchInputEvents(target);
+      highlightField(target, "success");
+
+      sendResponse({
+        type: "INSERT_ANSWER_RES",
+        payload: { success: true, message: "Inserted answer into page textarea." },
+      } satisfies InsertAnswerResMessage);
+      return false;
+    }
+
+    if (message.type === "ANALYZE_JOB") {
+      const payload = message.payload as AnalyzeJobPayload | undefined;
+      const selectionText =
+        payload?.manualText?.trim() ||
+        (payload?.useSelection ? window.getSelection()?.toString().trim() ?? "" : "");
+
+      const analysis = selectionText
+        ? analyzeSelectedText(selectionText, {
+            url: location.href,
+            platform: currentFormDetection.platform,
+          })
+        : analyzeJobPage();
+
+      const response: AnalyzeJobResMessage = {
+        type: "ANALYZE_JOB_RES",
+        payload: analysis,
+      };
+      sendResponse(response);
       return false;
     }
 

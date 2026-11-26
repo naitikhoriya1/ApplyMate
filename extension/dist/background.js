@@ -199,7 +199,9 @@
         case "TRIGGER_AUTOFILL":
         case "UNDO_AUTOFILL":
         case "FILL_SINGLE_FIELD":
-        case "RERUN_DETECTION": {
+        case "RERUN_DETECTION":
+        case "ANALYZE_JOB":
+        case "INSERT_ANSWER": {
           ext.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             const activeTab = tabs[0];
             const makeFallback = (reason) => {
@@ -224,6 +226,30 @@
               }
               if (message.type === "RERUN_DETECTION") {
                 return { type: "PAGE_INFO_RES", payload: null };
+              }
+              if (message.type === "ANALYZE_JOB") {
+                return {
+                  type: "ANALYZE_JOB_RES",
+                  payload: {
+                    companyName: "",
+                    jobTitle: "",
+                    jobDescription: "",
+                    requiredSkills: [],
+                    preferredSkills: [],
+                    experienceRequired: "",
+                    location: "",
+                    employmentType: "",
+                    platform: "None",
+                    sourceUrl: "",
+                    extractedAt: (/* @__PURE__ */ new Date()).toISOString()
+                  }
+                };
+              }
+              if (message.type === "INSERT_ANSWER") {
+                return {
+                  type: "INSERT_ANSWER_RES",
+                  payload: { success: false, message: reason }
+                };
               }
               if (message.type === "UNDO_AUTOFILL") {
                 return {
