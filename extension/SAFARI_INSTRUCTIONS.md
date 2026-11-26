@@ -1,121 +1,106 @@
-# ApplyMate Safari Extension — Developer & Loading Guide
+# ApplyMate — macOS Safari Packaging, Signing & Development Guide
 
-> Load the ApplyMate extension directly in Safari on macOS **without full Xcode**.  
-> Safari 17+ supports loading unsigned extensions directly from the project directory.
+## Prerequisites
 
----
-
-## 📋 Prerequisites
-
-- **macOS Sonoma / Ventura** (macOS 14+ or 13+)
-- **Safari 17+**
-- Node.js & npm (installed)
+1. **macOS** with **Safari 16+**
+2. **Node.js 22+** and **npm**
+3. **Full Xcode** from the Mac App Store (required for `xcrun safari-web-extension-converter` and `xcodebuild`; Apple Command Line Tools alone do not include the Safari converter).
 
 ---
 
-## 🚀 Step-by-Step Setup
+## 1. Build the Extension & Dashboard
 
-### Step 1 — Enable Safari Developer Features
-
-1. Open **Safari**.
-2. In the menu bar, open **Safari → Settings…** (or press `⌘,`).
-3. Click the **Advanced** tab.
-4. At the bottom, check:
-   - ✅ **"Show features for web developers"** (in Safari 17+)
-   *(or "Show Develop menu in menu bar" in earlier versions).*
-5. You will now see a **Develop** menu in your top menu bar.
-
----
-
-### Step 2 — Allow Unsigned Extensions
-
-> ℹ️ *Note: Apple security policies reset this setting whenever Safari is completely quit. If you restart Safari, re-check this option.*
-
-1. In the menu bar, click **Develop**.
-2. Click **"Allow Unsigned Extensions"**.
-3. Enter your macOS account password / Touch ID when prompted.
-
----
-
-### Step 3 — Build the Extension
-
-From the root of your project:
+From `applymate/`:
 
 ```bash
-cd /Users/naitik/Project/extension/applymate
-npm run build:extension
+npm install
+npm run test          # Run unit & integration test suite
+npm run typecheck     # TypeScript check
+npm run lint          # ESLint check
+npm run build:all     # Builds Next.js dashboard + extension/dist/
 ```
 
-This compiles TypeScript using `esbuild` and bundles:
-- `extension/dist/background.js` (MV3 Service Worker)
-- `extension/dist/content.js` (Page Detector & Floating Button)
-- `extension/dist/popup.js` (Toolbar Action Script)
-- `extension/dist/popup.html` (Popup User Interface)
-- `extension/dist/icons/` (16px, 32px, 48px, 128px PNG Icons)
+The build outputs:
+- `extension/dist/manifest.json` (self-contained unpacked bundle)
+- `extension/dist/background.js`, `content.js`, `popup.js`, `popup.html`, `icons/`
+- `extension/manifest.json` (root manifest referencing `dist/` for Xcode conversion)
 
 ---
 
-### Step 4 — Load Extension in Safari
+## 2. Create the Xcode Safari Web Extension App Wrapper
 
-1. In Safari, click **Develop → Load Unpacked Extension…**
-2. In the file picker, select the **`extension`** folder:
-   ```
-   /Users/naitik/Project/extension/applymate/extension
-   ```
-   *(Select the folder containing `manifest.json`, NOT `dist`)*
-3. Click **Open**.
-4. If prompted with *"Turn On Extension?"*, click **Turn On**.
-
-The **ApplyMate** icon (blue square with white briefcase) will appear in your Safari toolbar.
-
----
-
-## 🧪 Testing the First Requirement
-
-### Test Goal
-> When you open any webpage, the extension should be able to identify its URL and page title.
-
-### Verification Steps:
-
-1. **Open any webpage in Safari**:
-   - You can visit any public site (e.g. `https://github.com`, `https://news.ycombinator.com`, `https://apple.com`) or your local dashboard at `http://localhost:3000`.
-2. **Observe the Content Script**:
-   - Open **Develop → Web Inspector** (`⌥⌘I`), switch to the **Console** tab.
-   - Look for the console message:
-     ```
-     [ApplyMate] Page detected: "<Page Title>" (<hostname>)
-     ```
-   - Notice the floating blue **ApplyMate** button injected at the bottom-right corner of the page. Clicking it pulses and confirms active status.
-3. **Open the Toolbar Popup Action**:
-   - Click the **ApplyMate icon** in the Safari toolbar.
-   - The popup opens immediately showing:
-     - **Status Indicator**: 🟢 *Extension active*
-     - **Page Title**: Detected active page title
-     - **Domain**: Hostname (e.g., `github.com` or `localhost`)
-     - **Full URL**: Complete page URL
-   - Click the **Refresh** button in the popup to re-verify live communication between the popup, background service worker, and active tab.
-
----
-
-## 🔄 Rebuilding During Development
-
-Whenever you edit files inside `extension/src/`:
+Once full Xcode is installed and selected (`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`), run:
 
 ```bash
-npm run build:extension
+xcrun safari-web-extension-converter extension/ \
+  --project-location ./safari-xcode \
+  --app-name "ApplyMate" \
+  --bundle-identifier com.naitik.applymate \
+  --macos-only \
+  --no-open
 ```
 
-Then in Safari:
-- Click **Develop → Reload Extension** (or toggle it in Safari Settings → Extensions).
+This generates `./safari-xcode/ApplyMate/ApplyMate.xcodeproj` wrapping `extension/` inside a macOS Safari Web Extension host app.
 
 ---
 
-## 🛠️ Architecture Notes (Safari MV3)
+## 3. Build, Sign & Install Locally
 
-- **Manifest V3**: Uses `"manifest_version": 3`.
-- **Background Service Worker**: Configured as `"background": { "service_worker": "dist/background.js" }`.
-- **Cross-Namespace Compatibility**: Implements an automatic `browser` / `chrome` namespace shim to guarantee compatibility across Safari, Firefox, and Chromium engines.
-- **Permissions (Minimum Principle)**:
-  - `"activeTab"`: Access metadata on the currently focused tab when the user clicks the action.
-  - `"tabs"`: Allows background query of tab title/URL as a fallback when content scripts haven't finished injecting.
-  - `"storage"`: Authoritative `browser.storage.local` store for candidate profile persistence.
+1. Open `./safari-xcode/ApplyMate/ApplyMate.xcodeproj` in **Xcode**.
+2. Select **Signing & Capabilities** for both the `ApplyMate` (macOS App) and `ApplyMate Extension` targets:
+   - Enable **Automatically manage signing**.
+   - Select your **Personal Team** (free Apple ID works for local personal use).
+3. Press **Cmd + R** (Product → Run) to build and launch the ApplyMate host app.
+   - Or via CLI:
+     ```bash
+     xcodebuild -project safari-xcode/ApplyMate/ApplyMate.xcodeproj \
+       -scheme "ApplyMate (macOS)" -configuration Release build
+     ```
+
+---
+
+## 4. Enable ApplyMate in Safari
+
+1. Open **Safari → Settings → Advanced** and check **Show features for web developers**.
+2. Open **Safari → Settings → Extensions**.
+3. Check **ApplyMate** to enable it.
+4. Click **Always Allow on Every Website** (or grant access per job portal as needed).
+5. For local unsigned testing without Xcode packaging:
+   - **Develop → Allow Unsigned Extensions**
+   - **Develop → Load Unpacked Extension…** → select `applymate/extension/dist/`
+
+---
+
+## 5. Updating During Development
+
+1. Edit source files under `extension/` or `src/`.
+2. Rebuild the extension bundle:
+   ```bash
+   npm run build:extension
+   ```
+3. In Xcode, press **Cmd + R** to reinstall the updated bundle (or click **Reload** in Safari's Extension Builder / Extensions settings).
+
+---
+
+## 6. Optional AI Answer & Cover Letter Server
+
+To enable server-side OpenAI answer and cover letter refinement:
+
+1. Create `applymate/.env.local`:
+   ```bash
+   OPENAI_API_KEY=sk-your-key-here
+   ```
+2. Start the local Next.js dashboard server:
+   ```bash
+   npm run dev
+   ```
+Without `OPENAI_API_KEY` or the Next.js server running, ApplyMate continues working locally for autofill, form detection, resume storage, job description analysis, local cover letters/emails, and application tracking.
+
+---
+
+## 7. Known Limitations
+
+- **Xcode & Safari Live Testing**: Full Xcode and Playwright are not installed in the current environment, so `xcrun safari-web-extension-converter`, Xcode signing, Playwright browser E2E tests, and live Safari GUI verification have not been executed automatically and must be run locally on macOS with Xcode/Safari.
+- **Dashboard vs. Extension Storage Separation**: `localhost:3000` `localStorage` and Safari `browser.storage.local` are isolated browser storage areas; edits made in the extension use `browser.storage.local`, while the Next.js dashboard uses `localStorage` when opened in a normal browser tab.
+- **No Automatic Resume File Attachment or Form Submission**: By design, ApplyMate stores PDFs in IndexedDB and never assigns `<input type="file">` values or clicks submit buttons automatically.
+- **Custom / Shadow DOM Portals**: Sites using closed Shadow DOMs or heavy anti-bot/CAPTCHA gates cannot be autofilled automatically.

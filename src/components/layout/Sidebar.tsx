@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -50,8 +50,22 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const [isDarkMode, setIsDarkMode] = useState(false);
 
+  useEffect(() => {
+    const stored =
+      typeof window !== "undefined" ? localStorage.getItem("applymate_theme") : null;
+    const prefersDark =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+    const shouldBeDark = stored ? stored === "dark" : prefersDark;
+    document.documentElement.classList.toggle("dark", shouldBeDark);
+    queueMicrotask(() => setIsDarkMode(shouldBeDark));
+  }, []);
+
   const toggleTheme = () => {
     const nextIsDark = document.documentElement.classList.toggle("dark");
+    try {
+      localStorage.setItem("applymate_theme", nextIsDark ? "dark" : "light");
+    } catch {}
     setIsDarkMode(nextIsDark);
   };
 

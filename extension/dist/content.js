@@ -2561,10 +2561,16 @@ ${text}`;
   }
 }
 `;
+  function escapeHtml(str) {
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
   function renderUI() {
     if (!shadowRoot) return;
     const info = getPageSnapshot();
     const form = info.formDetection;
+    const safeTitle = escapeHtml(info.title);
+    const safeUrl = escapeHtml(info.url);
+    const safePlatform = escapeHtml(form.platform);
     shadowRoot.innerHTML = `
     <style>${SHADOW_STYLES}</style>
 
@@ -2615,8 +2621,8 @@ ${text}`;
           <!-- Page Info -->
           <div class="info-box">
             <div class="info-label">Current Page</div>
-            <div class="page-title-text" title="${info.title}">${info.title}</div>
-            <div class="page-url-text" title="${info.url}">${info.url}</div>
+            <div class="page-title-text" title="${safeTitle}">${safeTitle}</div>
+            <div class="page-url-text" title="${safeUrl}">${safeUrl}</div>
           </div>
 
           <!-- Form Detection Status -->
@@ -2627,7 +2633,7 @@ ${text}`;
                        <span>Application Form Detected</span>` : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                        <span>No Form Detected</span>`}
               </div>
-              ${form.platform !== "None" ? `<span class="platform-pill">${form.platform}</span>` : ""}
+              ${form.platform !== "None" ? `<span class="platform-pill">${safePlatform}</span>` : ""}
             </div>
 
             <div class="detection-desc">
@@ -2635,7 +2641,7 @@ ${text}`;
             </div>
 
             ${form.detected && form.detectedFields.length > 0 ? `<div class="fields-chip-list">
-                    ${form.detectedFields.map((f) => `<span class="field-chip">${f}</span>`).join("")}
+                    ${form.detectedFields.map((f) => `<span class="field-chip">${escapeHtml(f)}</span>`).join("")}
                   </div>` : ""}
           </div>
 
@@ -2702,11 +2708,13 @@ ${text}`;
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 6 9 17l-5-5"/>
           </svg>
-          <span>${result.message}</span>
+          <span>${escapeHtml(result.message)}</span>
         </div>
         <div class="autofill-chips">
           ${result.filledFields.map(
-          (f) => `<span class="autofill-chip">${f.fieldName}: ${f.valueFilled.length > 20 ? f.valueFilled.slice(0, 18) + "\u2026" : f.valueFilled}</span>`
+          (f) => `<span class="autofill-chip">${escapeHtml(f.fieldName)}: ${escapeHtml(
+            f.valueFilled.length > 20 ? f.valueFilled.slice(0, 18) + "\u2026" : f.valueFilled
+          )}</span>`
         ).join("")}
         </div>
       `;
@@ -2714,7 +2722,7 @@ ${text}`;
         feedbackContainer.className = "autofill-feedback empty";
         feedbackContainer.innerHTML = `
         <div class="autofill-summary-header">
-          <span>${result.message}</span>
+          <span>${escapeHtml(result.message)}</span>
         </div>
       `;
       }

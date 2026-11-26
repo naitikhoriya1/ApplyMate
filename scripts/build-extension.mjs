@@ -10,7 +10,7 @@
  */
 
 import * as esbuild from "esbuild";
-import { cpSync, mkdirSync, existsSync } from "fs";
+import { cpSync, mkdirSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -64,5 +64,30 @@ if (existsSync(extIcons)) {
   cpSync(extIcons, join(extDist, "icons"), { recursive: true });
 }
 
+// Emit a self-contained manifest.json inside dist/ (for Safari Load Unpacked Extension)
+const rootManifest = JSON.parse(
+  readFileSync(join(root, "extension", "manifest.json"), "utf8")
+);
+const distManifest = {
+  ...rootManifest,
+  action: {
+    ...rootManifest.action,
+    default_popup: "popup.html",
+  },
+  background: {
+    ...rootManifest.background,
+    service_worker: "background.js",
+  },
+  content_scripts: (rootManifest.content_scripts ?? []).map((cs) => ({
+    ...cs,
+    js: (cs.js ?? []).map((p) => p.replace(/^dist\//, "")),
+  })),
+};
+writeFileSync(
+  join(extDist, "manifest.json"),
+  JSON.stringify(distManifest, null, 2) + "\n",
+  "utf8"
+);
+
 console.log("\n✅  Extension built → extension/dist/");
-console.log("   background.js  content.js  popup.js  popup.html  icons/");
+console.log("   manifest.json  background.js  content.js  popup.js  popup.html  icons/");

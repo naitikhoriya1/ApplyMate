@@ -3,23 +3,43 @@ import {
   generateGroundedAnswer,
   validateGenerateAnswerRequest,
 } from "@/lib/ai/answerGenerator";
+import { getCorsHeaders, isTrustedOrigin } from "@/lib/security/cors";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+function sanitizeErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : "";
+  if (raw.includes("(401)") || raw.includes("(403)")) {
+    return "AI service authentication failed on the server.";
+  }
+  if (raw.includes("(429)")) {
+    return "AI service rate limit reached. Please try again shortly.";
+  }
+  return "Failed to generate AI answer. You can still write or edit manually.";
 }
 
-export async function GET() {
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin");
+  if (origin && !isTrustedOrigin(origin)) {
+    return new NextResponse(null, { status: 403 });
+  }
+  return new NextResponse(null, { status: 204, headers: getCorsHeaders(req) });
+}
+
+export async function GET(req: Request) {
+  const origin = req.headers.get("origin");
+  if (origin && !isTrustedOrigin(origin)) {
+    return NextResponse.json({ error: "Untrusted origin." }, { status: 403 });
+  }
   const aiEnabled = Boolean(process.env.OPENAI_API_KEY?.trim());
-  return NextResponse.json({ aiEnabled }, { headers: CORS_HEADERS });
+  return NextResponse.json({ aiEnabled }, { headers: getCorsHeaders(req) });
 }
 
 export async function POST(req: Request) {
+  const origin = req.headers.get("origin");
+  if (origin && !isTrustedOrigin(origin)) {
+    return NextResponse.json({ error: "Untrusted origin." }, { status: 403 });
+  }
+
+  const corsHeaders = getCorsHeaders(req);
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
     return NextResponse.json(
@@ -28,7 +48,7 @@ export async function POST(req: Request) {
           "AI answer generation is disabled (OPENAI_API_KEY not configured on server).",
         aiEnabled: false,
       },
-      { status: 503, headers: CORS_HEADERS }
+      { status: 503, headers: corsHeaders }
     );
   }
 
@@ -38,7 +58,7 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json(
       { error: "Invalid JSON request body." },
-      { status: 400, headers: CORS_HEADERS }
+      { status: 400, headers: corsHeaders }
     );
   }
 
@@ -46,20 +66,18 @@ export async function POST(req: Request) {
   if (!validation.valid) {
     return NextResponse.json(
       { error: validation.error },
-      { status: 400, headers: CORS_HEADERS }
+      { status: 400, headers: corsHeaders }
     );
   }
 
   try {
     const result = await generateGroundedAnswer(validation.data, { apiKey });
-    return NextResponse.json(result, { headers: CORS_HEADERS });
+    return NextResponse.json(result, { headers: corsHeaders });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Failed to generate AI answer.";
+    console.error("[ApplyMate AI Answer] Upstream error:", err);
     return NextResponse.json(
-      { error: message, aiEnabled: true },
-      { status: 502, headers: CORS_HEADERS }
+      { error: sanitizeErrorMessage(err), aiEnabled: true },
+      { status: 502, headers: corsHeaders }
     );
   }
 }
-

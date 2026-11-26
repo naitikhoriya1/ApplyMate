@@ -66,6 +66,11 @@ ext.runtime.onMessage.addListener(
     sender: chrome.runtime.MessageSender,
     sendResponse: (response: AnyMessage) => void
   ) => {
+    // Reject messages from untrusted external webpages or other extensions
+    if (sender.id && ext.runtime?.id && sender.id !== ext.runtime.id) {
+      return false;
+    }
+
     switch (message.type) {
       // Content script -> background: store detected page metadata
       case "PAGE_INFO": {

@@ -10,17 +10,62 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { ProfileStorageService } from "@/lib/storage/ProfileStorageService";
+import {
+  APPLICATIONS_STORAGE_KEY,
+  ACTIVITY_STORAGE_KEY,
+} from "@/lib/storage/applicationStorage";
+import { RESUME_DB_NAME } from "@/lib/storage/resumeStorage";
+import { createStorageAdapter } from "@/lib/storage/adapters";
 
 export default function SettingsPage() {
   const [autoDetect, setAutoDetect] = useState(true);
   const [showFloatingButton, setShowFloatingButton] = useState(true);
-  const [confirmBeforeFill, setConfirmBeforeFill] = useState(false);
-  const [autoRecordHistory, setAutoRecordHistory] = useState(true);
+  const [confirmBeforeFill, setConfirmBeforeFill] = useState(true);
   const [testPingSuccess, setTestPingSuccess] = useState(false);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const [dataActionMessage, setDataActionMessage] = useState<string | null>(null);
 
   const triggerTestPing = () => {
     setTestPingSuccess(true);
     setTimeout(() => setTestPingSuccess(false), 2500);
+  };
+
+  const handleExportProfile = async () => {
+    const service = new ProfileStorageService();
+    const json = await service.exportProfileJson();
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `applymate-profile-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setDataActionMessage("Exported profile JSON locally.");
+  };
+
+  const handleConfirmClearAllData = async () => {
+    const adapter = createStorageAdapter();
+    await adapter.remove("applymate_profile");
+    await adapter.remove(APPLICATIONS_STORAGE_KEY);
+    await adapter.remove(ACTIVITY_STORAGE_KEY);
+    await adapter.remove("applymate_last_job_analysis");
+
+    if (typeof indexedDB !== "undefined") {
+      await new Promise<void>((resolve) => {
+        const req = indexedDB.deleteDatabase(RESUME_DB_NAME);
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+        req.onblocked = () => resolve();
+      });
+    }
+
+    setConfirmClearOpen(false);
+    setDataActionMessage(
+      "Cleared all local profile, resume, and application tracker data."
+    );
   };
 
   return (
@@ -149,18 +194,15 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between pt-3">
             <div>
               <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Auto-record into Application History
+                Manual Submission Confirmation
               </div>
               <div className="text-xs text-zinc-500 mt-0.5">
-                Log company name, role, and date to your dashboard when form submission is triggered.
+                ApplyMate never submits forms automatically and only records submissions after your explicit confirmation.
               </div>
             </div>
-            <input
-              type="checkbox"
-              checked={autoRecordHistory}
-              onChange={(e) => setAutoRecordHistory(e.target.checked)}
-              className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-            />
+            <Badge variant="success" className="text-[10px]">
+              Always Enforced
+            </Badge>
           </div>
         </CardContent>
       </Card>
@@ -208,16 +250,58 @@ export default function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {dataActionMessage && (
+            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-200">
+              {dataActionMessage}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-3">
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 text-xs"
+              onClick={handleExportProfile}
+            >
               <Download className="w-3.5 h-3.5" />
               <span>Export Full Profile as JSON</span>
             </Button>
-            <Button size="sm" variant="danger" className="gap-1.5 text-xs">
+            <Button
+              size="sm"
+              variant="danger"
+              className="gap-1.5 text-xs"
+              onClick={() => setConfirmClearOpen(true)}
+            >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>Clear Extension Cache</span>
+              <span>Delete All Local Data</span>
             </Button>
           </div>
+
+          {confirmClearOpen && (
+            <div className="p-4 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/30 space-y-2">
+              <p className="text-xs font-semibold text-red-800 dark:text-red-200">
+                Confirm permanent deletion of all local ApplyMate data?
+              </p>
+              <p className="text-xs text-red-700 dark:text-red-300">
+                This removes your saved profile, stored PDF resumes (IndexedDB), and application tracker records.
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirmClearOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={handleConfirmClearAllData}
+                >
+                  Confirm Delete All
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

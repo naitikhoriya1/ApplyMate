@@ -1,37 +1,120 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ApplyMate
+
+A personal **macOS Safari Web Extension** and **Next.js Dashboard** for smart job application autofill, resume management, job description analysis, personalized cover letter/email generation, and application tracking — built with a **local-first, privacy-focused** architecture.
+
+---
+
+## Key Features
+
+### 1. Safari Web Extension (`extension/`)
+- **Smart Form Detection Engine** (`extension/autofill/fieldClassifier.ts`)
+  - Detects 20+ canonical candidate fields (`firstName`, `lastName`, `fullName`, `email`, `phone`, `location`, `city`, `country`, `linkedin`, `github`, `portfolio`, `currentCompany`, `previousCompany`, `currentTitle`, `educationSchool`, `educationDegree`, `educationGradYear`, `skills`, `experience`, `resumeLink`, `bio`, etc.).
+  - Analyzes 8 signals (`name`, `id`, `placeholder`, `<label>`, `aria-label`/`aria-labelledby`, `type`, `autocomplete`, and parent `<form>`/`<fieldset>` context) with weighted confidence scoring and ambiguity flagging.
+  - Excludes `password`, `hidden`, `file`, `captcha`/`recaptcha`/`turnstile`, and sensitive demographic fields.
+- **Multi-Site Adapters & Multi-Step Support** (`extension/autofill/siteAdapters.ts`)
+  - Resilient attribute-based adapters for **LinkedIn**, **Naukri**, **Indeed**, **Greenhouse**, **Lever**, **Workday**, and **SmartRecruiters**, with generic detection as the default fallback.
+  - Automatically rescans dynamically rendered SPAs and multi-step application wizards.
+- **One-Click Autofill Engine & Review UI** (`extension/autofill/autofillEngine.ts`, `extension/popup/popup.html`, `extension/src/popup.ts`)
+  - Fills only empty fields (preserves user-entered values), supports `<input>`, `<textarea>`, `<select>`, and React-controlled inputs.
+  - Visual DOM highlights: **green** (filled), **neutral** (skipped), **red** (error).
+  - Detailed review panel showing Detected / Filled / Skipped / Failed / Manual Attention counts, per-field manual fill, **Undo Autofill**, **Rerun Detection**, and duplicate-autofill prevention.
+- **Job Description Analyzer (Zero-AI)** (`extension/analyzer/jobAnalyzer.ts`)
+  - Extracts company name, job title, cleaned description (stripping nav/footer/sidebar noise), required vs. preferred technical skills, experience requirements, location, and employment type, with a manual text selection fallback and editable fields.
+- **Floating In-Page Assistant** (`extension/src/content.ts`)
+  - Shadow DOM isolated bottom-right trigger button and status card with session hide/restore toggle.
+
+### 2. Next.js Dashboard (`src/`)
+- **Dashboard Overview** (`/`): Profile completion, quick stats, and navigation with light & dark mode (`Sidebar.tsx`).
+- **Profile Manager** (`/profile`): Editable personal info, social links, work experience, education, skills, application preferences, and live preview backed by `ProfileStorageService`.
+- **Resume Manager** (`/resume`): Local PDF upload, validation (`.pdf`, <= 10 MB), **IndexedDB** binary storage (`applymate_resumes_db` — never `localStorage`), replace, delete, download, and explicit confirmation modals.
+- **Application Tracker** (`/applications`): Track applications across 6 statuses (`Interested`, `Preparing`, `Applied`, `Interview`, `Rejected`, `Offer`), search/filter, view stats & recent activity, and explicitly confirm when an application was submitted.
+- **Settings & Privacy** (`/settings`): Export full profile as JSON and confirmation-gated **Delete All Local Data** (profile, applications, activity, job cache, and IndexedDB resumes).
+
+### 3. Optional AI Answer & Cover Letter Generator (`src/app/api/ai/`)
+- **Server-Only OpenAI Integration** (`/api/ai/answer`, `/api/ai/cover-letter`): Uses `process.env.OPENAI_API_KEY` exclusively on the server with trusted-origin CORS checks (`src/lib/security/cors.ts`).
+- **Strict Grounding**: Uses only verified candidate profile facts; never fabricates skills, experience, or metrics.
+- **Cover Letter & Application Email Generator** (`src/lib/ai/localCoverLetter.ts`): Works offline out-of-the-box (or optionally with OpenAI), supports **Generate**, **Regenerate**, **Edit**, **Copy**, and **Insert**, and always uses your actual contact signature.
+
+---
+
+## Project Structure
+
+```text
+applymate/
+├── extension/
+│   ├── manifest.json              # Manifest V3 (storage + activeTab, strict CSP)
+│   ├── SAFARI_INSTRUCTIONS.md     # Xcode packaging, signing, and Safari setup
+│   ├── analyzer/jobAnalyzer.ts    # Deterministic job description extractor
+│   ├── autofill/
+│   │   ├── fieldClassifier.ts     # Modular weighted field detection engine
+│   │   ├── siteAdapters.ts        # LinkedIn, Naukri, Indeed, Greenhouse, Lever, Workday, SmartRecruiters
+│   │   └── autofillEngine.ts      # Safe autofill execution, highlights, undo, dedup
+│   ├── popup/popup.html           # Extension popup UI
+│   ├── src/                       # background.ts, content.ts, popup.ts, detector.ts, types.ts
+│   └── dist/                      # Built extension bundle (generated by build:extension)
+├── scripts/
+│   └── build-extension.mjs        # esbuild bundler targeting Safari 16+
+├── src/
+│   ├── app/                       # Next.js App Router pages & API routes
+│   ├── components/                # Reusable dashboard, profile, resume, application, UI components
+│   ├── lib/                       # Storage adapters, IndexedDB resume service, validation, AI helpers, CORS
+│   └── types/                     # Shared TypeScript interfaces
+└── tests/                         # Node test runner suite (84 unit & integration tests)
+```
+
+---
 
 ## Getting Started
 
-First, run the development server:
+### 1. Install Dependencies
+
+```bash
+npm install
+```
+
+### 2. Run the Next.js Dashboard
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+*(Optional)* To enable AI answer generation, create `.env.local`:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+OPENAI_API_KEY=sk-your-key-here
+```
 
-## Learn More
+### 3. Build the Safari Extension
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run build:extension
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+This type-checks `extension/` and outputs a self-contained bundle to `extension/dist/`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+For full Xcode wrapper packaging, code signing, and Safari activation steps, see [extension/SAFARI_INSTRUCTIONS.md](extension/SAFARI_INSTRUCTIONS.md).
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Available Scripts
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-# Viora
+| Command | Description |
+|---|---|
+| `npm run dev` | Start the Next.js development server (`localhost:3000`) |
+| `npm run build` | Build the Next.js production app |
+| `npm run build:extension` | Type-check and bundle the Safari extension into `extension/dist/` |
+| `npm run build:all` | Build both the Next.js app and the Safari extension |
+| `npm run test` | Run all tests in `tests/*.test.ts` |
+| `npm run typecheck` | Run `tsc --noEmit` across the Next.js project |
+| `npm run lint` | Run ESLint |
+
+---
+
+## Security & Privacy Model
+
+- **Local-First**: Profile, tracker, and PDF resume data stay locally in `browser.storage.local`, `localStorage` (dashboard dev fallback), and IndexedDB.
+- **Least Privilege**: Extension manifest requests only `storage` and `activeTab` with a strict `script-src 'self'` CSP.
+- **No Auto-Submit or Silent Uploads**: ApplyMate never clicks submit buttons, never attaches resume files without user action, and never assumes an application was submitted until explicitly confirmed.
+- **XSS & Origin Protection**: Shadow DOM templates escape all dynamic page strings, background scripts verify `sender.id`, and local AI API routes restrict CORS to `localhost:3000` and extension origins.
